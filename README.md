@@ -1,8 +1,4 @@
- ██████  ███████ ███████ ███████ ██████  ██    ██ ███████ ██████  
-██    ██ ██      ██      ██      ██   ██ ██    ██ ██      ██   ██ 
-██    ██ ███████ ███████ █████   ██████  ██    ██ █████   ██████  
-██    ██      ██      ██ ██      ██   ██  ██  ██  ██      ██   ██ 
- ██████  ███████ ███████ ███████ ██   ██   ████   ███████ ██   ██ 
+
 
 
 ##### Dashboard for Ossec
@@ -13,4 +9,4 @@
 - Https
 - Some others stuff
 
-![](https://i.ibb.co/rpRLHj9/Ossec-Demo.png)
+![https://i.ibb.co/rpRLHj9/Ossec-Demo.png](https://i.ibb.co/rpRLHj9/Ossec-Demo.png)
