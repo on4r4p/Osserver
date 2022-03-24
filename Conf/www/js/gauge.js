@@ -64,7 +64,7 @@
 
 		//random degree from 0 to 360
 		//new_degrees = Math.round(Math.random()*360);
-       cpulist = [76, 2, 4, 2, 4, 6, 3, 3, 1, 12];
+       cpulist = [17, 3, 3, 8, 2, 7, 2, 7, 2, 7];
        rdmcpu = cpulist[Math.floor(Math.random()*cpulist.length)];
 
     new_degrees = Math.round((360 / 100) * rdmcpu);
