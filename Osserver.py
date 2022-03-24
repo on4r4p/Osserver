@@ -1475,8 +1475,8 @@ def UpdateWWW():
 
      if PastNowChart == 9999999999:
           TimediffChart = 900009
-               if DEBUG > 2:
-              DebugMode(TimediffChart,PastNowChart,now)
+          if DEBUG > 2:
+                    DebugMode(TimediffChart,PastNowChart,now)
      else:
           TimediffChart = round((now -PastNowChart).total_seconds())
           if DEBUG > 2:
@@ -1564,7 +1564,7 @@ def main():
 if __name__ == "__main__":
 
 
-     DEBUG = 1
+     DEBUG = 0
 
 
      tput=subprocess.Popen(['tput', 'cols'], stdout=subprocess.PIPE)
