@@ -1618,4 +1618,4 @@ if __name__ == "__main__":
      Subjects = []
      Dates = []
      Messages = []
-     Thread(main()).start() 
+     main()
