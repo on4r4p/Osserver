@@ -1,17 +1,54 @@
 #!/usr/bin/env python3
-import email,sys,time,re,os,threading,subprocess,socket,inspect
+import email,sys,time,re,os,subprocess,socket,inspect,cherrypy
 import dateutil.parser as dparser
-from http.server import SimpleHTTPRequestHandler,HTTPServer
+from threading import Thread
 from datetime import datetime,timedelta
 from pathlib import Path
 from email.policy import default
 from email.parser import BytesParser, Parser
-from static.html import *
-from static.gauge import *
-from static.ossechart import *
-from conf.osserver_conf import *
+from Conf.static.html import *
+from Conf.static.gauge import *
+from Conf.static.ossechart import *
+from Conf.osserver_conf import *
 
 
+
+def Betterror(error_msg, def_name):
+    Err_to_log = "Empty"
+    CurrentDate = datetime.now()
+    try:
+        exc_type, exc_obj, exc_tb = sys.exc_info()
+        fname = os.path.split(exc_tb.tb_frame.f_code.co_filename)[1]
+        Err_to_log = (
+            "!!\nFile: %s has encounter a %s error in %s() at line %s\nError Message:%s\n!!"
+            % (fname, exc_type, def_name, exc_tb.tb_lineno, error_msg)
+        )
+#        print("\n!!Error At:"+str(CurrentDate) + "!!\n")
+#        print(Err_to_log)
+
+    except Exception as e:
+        exc_type, exc_obj, exc_tb = sys.exc_info()
+        fname = os.path.split(exc_tb.tb_frame.f_code.co_filename)[1]
+        Err_to_log = (
+            "!!\nFile: %s has encounter a %s error in Betterror() at line %s\nError Message:%s\n!!"
+            % (fname, exc_type, exc_tb.tb_lineno, e)
+        )
+#        print("\n!!Error At:"+str(CurrentDate) + "!!\n")
+#        print(Err_to_log)
+
+#    time.sleep(1)
+    return Error_Log(Err_to_log,CurrentDate)
+
+
+def Error_Log(Err_to_log,CurrentDate):
+    try:
+
+        with open("Error.log", "a") as fuck:
+            fuck.write("\n"+str(CurrentDate))
+            fuck.write("\n"+Err_to_log)
+
+    except Exception as e:
+        Betterror(e, inspect.stack()[0][3])
 
 def DebugMode(*variables):
 
@@ -30,6 +67,7 @@ def DebugMode(*variables):
                    var_names.append(names[0])
 
          except Exception as e:
+             Betterror(e, inspect.stack()[0][3])
              print("Error in DebugMode :",e)
 
 
@@ -67,18 +105,19 @@ def Loading():
 
 
 def Mbr(mbx):
-        global Done
-        global FirstLoad
+    global Done
+    global FirstLoad
 
 
-        if DEBUG > 0:
+    if DEBUG > 0:
            print("\nIn Mbr\n")
-        elif DEBUG == 0 and ServerReady is True:
+    elif DEBUG == 0 and ServerReady is True:
                     Loading()
 
-        lock = False
-        lines = []
-        while True:
+    lock = False
+    lines = []
+    while True:
+        try:
             line = mbx.readline()
             if DEBUG > 2:
                  if line.startswith(b'From '):
@@ -150,6 +189,9 @@ def Mbr(mbx):
               if DEBUG > 2:
                  info="Lock prevent appending line in lines[] now Lock is back to false";DebugMode(info)
               lock = False
+        
+        except Exception as e:
+               Betterror(e, inspect.stack()[0][3])
 
 def Sorting(mode,arg):
      Hosts_Sort = []
@@ -215,6 +257,7 @@ def Sorting(mode,arg):
                           rule = int(line.split("Rule: ")[1].split(" fired")[0])
                           break
                         except Exception as e:
+                             Betterror(e, inspect.stack()[0][3])
                              if DEBUG > 2:
                                 info="Rule Error:"+e;DebugMode(info,line)
 
@@ -293,6 +336,7 @@ def CheckLvl(Sender,Dest,Sub,Mess):
                      lvl = line.split("Summary Lvl ")[1].split(" at")[0].replace(" ","")
                      return(lvl)
                    except Exception as e:
+                      Betterror(e, inspect.stack()[0][3])
                       if DEBUG > 2:
                         info="Checkservice.py lvl error:",e;DebugMode=(info)
                       lvl = "??"
@@ -308,6 +352,7 @@ def CheckLvl(Sender,Dest,Sub,Mess):
                      lvl = line.split("[")[1].split("]")[0]
                      return(lvl)
      except Exception as e:
+               Betterror(e, inspect.stack()[0][3])
                lvl = "??"
                if DEBUG > 1:
                            info="Error:",e;DebugMode(info,Sub,Sender,Dest,lvl,Mess)
@@ -338,7 +383,10 @@ def CheckLvl(Sender,Dest,Sub,Mess):
      else:
               lvl = "??"
               if DEBUG > 2:
+                 try:
                            info="Error: lvl is ??";DebugMode(info,Sub,Sender,Dest,lvl,Mess)
+                 except Exception as e:
+                    Betterror(e, inspect.stack()[0][3])
      return(lvl)
 
 def CheckDate(Sender,Dest,Sub,Mess):
@@ -360,16 +408,17 @@ def CheckDate(Sender,Dest,Sub,Mess):
                          dat = dparser.parse(str(line),fuzzy=True)
                          return(dat)
                      except Exception as e:
+                        Betterror(e, inspect.stack()[0][3])
                         if DEBUG > 1:
-                                datDEBUG += "\nCheckservice:Exception Line :"+str(line)
-                                datDEBUG += "\nCheckservice:Len Line :"+str(len(str(line)))
-                                datDEBUG += "\nCheckservice:Len Dat :"+str(len(str(dat)))
+                                datDEBUG  +=  "\nCheckservice:Exception Line :"+str(line)
+                                datDEBUG  +=  "\nCheckservice:Len Line :"+str(len(str(line)))
+                                datDEBUG  +=  "\nCheckservice:Len Dat :"+str(len(str(dat)))
                         return(dat)
               else:
                         if DEBUG > 2:
-                                datDEBUG += "\nCheckservice:Exception Line :"+str(line)
-                                datDEBUG += "\nCheckservice:Len Line :"+str(len(str(line)))
-                                datDEBUG += "\nCheckservice:Len Dat :"+str(len(str(dat)))
+                                datDEBUG  +=  "\nCheckservice:Exception Line :"+str(line)
+                                datDEBUG  +=  "\nCheckservice:Len Line :"+str(len(str(line)))
+                                datDEBUG  +=  "\nCheckservice:Len Dat :"+str(len(str(dat)))
                         return(dat)
                         pass
 
@@ -384,10 +433,11 @@ def CheckDate(Sender,Dest,Sub,Mess):
                          dat = dparser.parse(str(line),fuzzy=True)
                          return(dat)
                      except Exception as e:
+                        Betterror(e, inspect.stack()[0][3])
                         if DEBUG > 1:
-                                datDEBUG += "\nException Line :"+str(line)
-                                datDEBUG += "\nLen Line :"+str(len(str(line)))
-                                datDEBUG += "\nLen Dat :"+str(len(str(dat)))
+                                datDEBUG  +=  "\nException Line :"+str(line)
+                                datDEBUG  +=  "\nLen Line :"+str(len(str(line)))
+                                datDEBUG  +=  "\nLen Dat :"+str(len(str(dat)))
                         pass
 
 
@@ -425,6 +475,7 @@ def Stockvars(Sender,Dest,Sub,Mess):
      try:
           hostname= re.search(r'\((.*?)\)',Sub).group(1).replace(" ","")
      except Exception as e:
+          Betterror(e, inspect.stack()[0][3])
           if DEBUG > 1:
                 info="Errorhostname:",e;DebugMode(info)
           hostname ="Unknown"
@@ -446,6 +497,7 @@ def Stockvars(Sender,Dest,Sub,Mess):
           lvl = re.search(r'Level (.*?)-',Sub).group(1).replace(" ","")
           int(lvl)
      except Exception as e:
+          Betterror(e, inspect.stack()[0][3])
           if DEBUG > 1:
                info="Errorlvl:",e;DebugMode(info)
           lvl = CheckLvl(Sender,Dest,Sub,Mess)
@@ -470,11 +522,12 @@ def Stockvars(Sender,Dest,Sub,Mess):
                     l = l.replace(remove,str(temps))
                     newline.append(l)
                  except Exception as e:
+                     Betterror(e, inspect.stack()[0][3])
                      if DEBUG > 1:
                         info="Epoch Error:",e;DebugMode(info,l)
               line = "<br>".join(newline)
               
-          body += str(line)+"<br>"
+          body  +=  str(line)+"<br>"
      if len(str(body))>4:
          Messages.append(str(body))
      else:
@@ -507,25 +560,17 @@ def ssh(usr,host,cmd):
           out = subprocess.check_output(["ssh", "-i",SSH_KEY, "{}@{}".format(usr, host), cmd])
           return(out.decode("utf8"))
      except Exception as e:
+          Betterror(e, inspect.stack()[0][3])
           if DEBUG >1:
               info="SSh Error:",e;DebugMode(info)
 
 
-def ServerWeb():
-     if DEBUG > 0:
+
+class Osserver:
+    if DEBUG > 0:
        print("\nIn ServerWeb\n")
-     elif DEBUG == 0 and ServerReady is True:
+    elif DEBUG == 0 and ServerReady is True:
                     Loading()
-
-     server = HTTPServer(('', 80), SimpleHTTPRequestHandler)
-     thread = threading.Thread(target = server.serve_forever)
-     thread.daemon = True
-     try:
-          thread.start()
-     except KeyboardInterrupt:
-          server.shutdown()
-          sys.exit(0)
-
 
 def Avatar_Accordeon(hname):
     if DEBUG > 2:
@@ -534,13 +579,13 @@ def Avatar_Accordeon(hname):
                     Loading()
     hname = hname.lower().replace(" ","")
     for name,img in zip(HOSTS_NAMES,HOSTS_IMGS):
-        if name.lower() == hname:
-          return('<img class="avatar" src="images/'+ WWW_IMG_PATH + img +'" alt="'+ name +'" style="width: 14px; height: 14px;">')
-        else:
-          if DEBUG > 2:
+        if name.lower() == hname.lower():
+          print("GOOD %s == %s = %s"%(name.lower(),hname.lower(),hname==name.lower()))
+          return('<img class="avatar" src="images/'+ img +'" alt="'+ name +'" style="width: 14px; height: 14px;">')
+    if DEBUG > 0:
             for hn in HOSTS_NAMES:
-               info="Is %s == %s : %s  Type hname %s Type hn %s"%(hname,hn,hname==hn,type(hname),type(hn));DebugMode(info)
-          return("??")
+               info="Is %s == %s : %s  Type hname %s Type hn %s"%(hname,hn.lower(),hname==hn.lower(),type(hname),type(hn));DebugMode(info)
+    return("??")
 
 def End_Item_Accordeon_To_Split(Current_Item,Total_Items,Current_Page,Page_Name):
                if DEBUG > 0:
@@ -694,7 +739,7 @@ def Accordeon(sort=None,arg=None):
               Switch = True
               To_Split = False
               geticon = Avatar_Accordeon(name)
-              Accordeon_Html+="""\n              <div class="accordion-group">
+              Accordeon_Html += """\n              <div class="accordion-group">
                 <div class="accordion-heading"> <a class="accordion-toggle" data-toggle="collapse"
                     data-parent="#accordion2" href="#collapse%s" aria-expanded="false">%s %s From %s Lvl %s :<br>%s</a> </div>
                 <div id="collapse%s" class="accordion-body collapse" aria-expanded="false" style="height: 0px;">
@@ -707,13 +752,13 @@ def Accordeon(sort=None,arg=None):
 
                  To_Split = True
                  if DEBUG > 2:
-                        info="Split was  True and i >Max and Max is:",Max_Items;info+="\nTotal item to be proceed :",len(Subjects_Sort)+1
+                        info="Split was  True and i >Max and Max is:",Max_Items;info += "\nTotal item to be proceed :",len(Subjects_Sort)+1
                         DebugMode(info,Switch)
 
                  Last_Position,Last_Hosts_Sort,Last_Levels_Sort,Last_Dates_Sort,Last_Messages_Sort,Last_Subjects_Sort=\
                  i,Hosts_Sort,Levels_Sort,Dates_Sort,Messages_Sort,Subjects_Sort
 
-                 Accordeon_Html+=End_Item_Accordeon_To_Split(i,len(Subjects_Sort)+1,Page_Number,arg)
+                 Accordeon_Html += End_Item_Accordeon_To_Split(i,len(Subjects_Sort)+1,Page_Number,arg)
                  return(Accordeon_Html)
            else:
                  i = i + 1
@@ -721,7 +766,7 @@ def Accordeon(sort=None,arg=None):
         else: #To_Split is False:
 
               geticon = Avatar_Accordeon(name)
-              Accordeon_Html+="""\n              <div class="accordion-group">
+              Accordeon_Html += """\n              <div class="accordion-group">
                 <div class="accordion-heading"> <a class="accordion-toggle" data-toggle="collapse"
                     data-parent="#accordion2" href="#collapse%s" aria-expanded="false">%s %s From %s Lvl %s :<br>%s</a> </div>
                 <div id="collapse%s" class="accordion-body collapse" aria-expanded="false" style="height: 0px;">
@@ -733,18 +778,18 @@ def Accordeon(sort=None,arg=None):
               if i > Max_Items:
                  To_Split = True
                  if DEBUG > 2:
-                        info="Split is now  True cause i >Max and Max is:",Max_Items;info+="\nTotal item to be proceed :",len(Subjects_Sort)+1
+                        info="Split is now  True cause i >Max and Max is:",Max_Items;info += "\nTotal item to be proceed :",len(Subjects_Sort)+1
                         DebugMode(info,Switch)
 
                  Last_Position,Last_Hosts_Sort,Last_Levels_Sort,Last_Dates_Sort,Last_Messages_Sort,Last_Subjects_Sort=\
                  i,Hosts_Sort,Levels_Sort,Dates_Sort,Messages_Sort,Subjects_Sort
 
-                 Accordeon_Html+=End_Item_Accordeon_To_Split(i,len(Subjects_Sort)+1,Page_Number,arg)
+                 Accordeon_Html += End_Item_Accordeon_To_Split(i,len(Subjects_Sort)+1,Page_Number,arg)
 
                  return(Accordeon_Html)
 
      Split_End = True
-     Accordeon_Html+=End_Item_Accordeon_To_Split(i,len(Subjects_Sort)+1,Page_Number,arg)
+     Accordeon_Html += End_Item_Accordeon_To_Split(i,len(Subjects_Sort)+1,Page_Number,arg)
      return(Accordeon_Html)
 
 
@@ -918,44 +963,44 @@ def BuildHtml(sort=None,arg=None):
 
 ##
 
-         Data_to_html+=Template_Head
+         Data_to_html += Template_Head
 
-         Data_to_html+=Template_Row1
+         Data_to_html += Template_Row1
 
-         Data_to_html+=Template_Profile
+         Data_to_html += Template_Profile
 
-         Data_to_html+=Template_DailyBlock
+         Data_to_html += Template_DailyBlock
 
-         Data_to_html+="""
+         Data_to_html += """
                       <p><bold style="font-size: 18px;">Alerts:</bold> """ + str(DailyCounter_Alert) + """</p>
                       <p><bold style="font-size: 18px;">Events:</bold> """ + str(DailyCounter_Event) + """</p>
                       <p><bold style="font-size: 18px;">Syschecks:</bold>""" + str(DailyCounter_Syscheck) + """</p>
                       <p><bold style="font-size: 18px;">Firewalls:</bold> """ + str(DailyCounter_Firewall) + "</p>"
 
-         Data_to_html+=Template_DailyBlockEND
+         Data_to_html += Template_DailyBlockEND
 
-         Data_to_html+= Template_HourBlock
+         Data_to_html +=  Template_HourBlock
 
-         Data_to_html+=str(Last_Stat_Alert) + """</p>
+         Data_to_html += str(Last_Stat_Alert) + """</p>
                       <p><bold style="font-size: 18px;">Events:</bold> """ + str(Last_Stat_Event) + """</p>
                       <p><bold style="font-size: 18px;">Syschecks:</bold>""" + str(Last_Stat_Syscheck) + """</p>
                       <p><bold style="font-size: 18px;">Firewalls:</bold> """ + str(Last_Stat_Firewall) + "</p>"
 
-         Data_to_html+=Template_HourBlockEND
+         Data_to_html += Template_HourBlockEND
 
-         Data_to_html+=Template_Chart
+         Data_to_html += Template_Chart
 
-        ##################################################### #Data_to_html+=Template_ChartEND
+        ##################################################### #Data_to_html += Template_ChartEND
 
-         Data_to_html+=Template_ChartJs
+         Data_to_html  += Template_ChartJs
 
-         Data_to_html+= Template_Row2
+         Data_to_html  +=  Template_Row2
 
-         Data_to_html+=Template_Health
+         Data_to_html  +=  Template_Health
 
          for hst,img in zip(HOSTS_NAMES,HOSTS_IMGS):
 
-            Data_to_html+="""                  <li> <i class="read" style="background-color: #cc33cc;"></i>
+            Data_to_html += """                  <li> <i class="read" style="background-color: #cc33cc;"></i>
                     <img class="avatar" src="images/%s" alt="avatar" style="background-color: #ffccff;">
                     <p class="sender" style="top: -3px !important;">Temp:%s</p>
                     <p class="disk">Disk:%s</p>
@@ -963,66 +1008,66 @@ def BuildHtml(sort=None,arg=None):
 ant;">Alerts
                       %s</p>
                     <br>
-                  </li>"""%(img,HOST_DICT.get(hst+"_Temp"),HOST_DICT.get(hst+"_Space",HOST_DICT.get(hst+"_Alert"))
+                  </li>"""%(img,HOST_DICT.get(hst+"_Temp"),HOST_DICT.get(hst+"_Space"),HOST_DICT.get(hst+"_Alert"))
 
 
 
-         Data_to_html+=Template_HealthEND
+         Data_to_html += Template_HealthEND
 
-         Data_to_html+=Template_Accordeon
+         Data_to_html += Template_Accordeon
          
-         Data_to_html+=Accordeon(sort,arg)
+         Data_to_html += Accordeon(sort,arg)
 
-         Data_to_html+=Template_AccordeonEND
+         Data_to_html += Template_AccordeonEND
 
-         Data_to_html+=Template_Row3part1
+         Data_to_html += Template_Row3part1
 
-         Data_to_html+=Template_Cam
+         Data_to_html += Template_Cam
 
-         Data_to_html+="""<p><bold style="font-size: 15px;">GarageCam :</bold> %s</p>"""%(GarageCam)
+         Data_to_html += """<p><bold style="font-size: 15px;">GarageCam :</bold> %s</p>"""%(GarageCam)
 
-         Data_to_html+="""<p><bold style="font-size: 15px;">GardenCam :</bold> %s</p>"""%(GardenCam)
+         Data_to_html += """<p><bold style="font-size: 15px;">GardenCam :</bold> %s</p>"""%(GardenCam)
 
-         Data_to_html+="""<p><bold style="font-size: 15px;">LivingCam :</bold> %s</p>"""%(LivingCam)
+         Data_to_html += """<p><bold style="font-size: 15px;">LivingCam :</bold> %s</p>"""%(LivingCam)
 
-         Data_to_html+=Template_CamEND
+         Data_to_html += Template_CamEND
 
-         Data_to_html+=Template_Row3part2
+         Data_to_html += Template_Row3part2
 
-         Data_to_html+= Template_AlertBlock1
+         Data_to_html +=  Template_AlertBlock1
 
-         Data_to_html+= str(MaxLvlAlert) + "</p>\n"
+         Data_to_html +=  str(MaxLvlAlert) + "</p>\n"
 
          for rule,cnt in RuleId_Counter.items():
-              Data_to_html+= """            <p style="text-align: center;"><a href="lvl%s.html">LvL %s</a> <a href="rule%s.html">Rule[%s]</a>: %s</p>\n"""%(RuleId_Lvl.get(rule),RuleId_Lvl.get(rule),rule,rule,cnt)
+              Data_to_html +=  """            <p style="text-align: center;"><a href="lvl%s.html">LvL %s</a> <a href="rule%s.html">Rule[%s]</a>: %s</p>\n"""%(RuleId_Lvl.get(rule),RuleId_Lvl.get(rule),rule,rule,cnt)
 
-         Data_to_html+= """\n<br><p style="text-decoration: underline overline; font-weight: bold; text-align: center;">Level Zero Alerts: """+str(LevelZero_Counter)+"</p>"
+         Data_to_html +=  """\n<br><p style="text-decoration: underline overline; font-weight: bold; text-align: center;">Level Zero Alerts: """+str(LevelZero_Counter)+"</p>"
 
          for rule,cnt in LevelZero_Id.items():
-              Data_to_html+="""            <p style="text-align: center;">LvL 0 Rule[%s]: %s</p>\n"""%(rule,cnt)
+              Data_to_html += """            <p style="text-align: center;">LvL 0 Rule[%s]: %s</p>\n"""%(rule,cnt)
 
-         Data_to_html+=Template_AlertBlock1END
+         Data_to_html += Template_AlertBlock1END
 
-         Data_to_html+=Template_Row4
+         Data_to_html += Template_Row4
 
-         Data_to_html+= Template_AlertBlock2
+         Data_to_html +=  Template_AlertBlock2
 
-         Data_to_html+= str(Yesterday_MaxLvlAlert) + "</p>\n"
+         Data_to_html +=  str(Yesterday_MaxLvlAlert) + "</p>\n"
 
          for rule,cnt in Yesterday_RuleId_Counter.items():
-              Data_to_html+= """            <p style="text-align: center;"><a href="lvl%s.html">LvL %s</a> <a href="rule%s.html">Rule[%s]</a>: %s</p>\n"""%(Yesterday_RuleId_Lvl.get(rule),Yesterday_RuleId_Lvl.get(rule),rule,rule,cnt)
+              Data_to_html +=  """            <p style="text-align: center;"><a href="lvl%s.html">LvL %s</a> <a href="rule%s.html">Rule[%s]</a>: %s</p>\n"""%(Yesterday_RuleId_Lvl.get(rule),Yesterday_RuleId_Lvl.get(rule),rule,rule,cnt)
 
-         Data_to_html+= """\n<br><p style="text-decoration: underline overline; font-weight: bold; text-align: center;">Level Zero Alerts: """+str(Yesterday_LevelZero_Counter)+"</p>"
+         Data_to_html +=  """\n<br><p style="text-decoration: underline overline; font-weight: bold; text-align: center;">Level Zero Alerts: """+str(Yesterday_LevelZero_Counter)+"</p>"
 
          for rule,cnt in Yesterday_LevelZero_Id.items():
-              Data_to_html+="""            <p style="text-align: center;">LvL 0 Rule[%s]: %s</p>\n"""%(rule,cnt)
+              Data_to_html += """            <p style="text-align: center;">LvL 0 Rule[%s]: %s</p>\n"""%(rule,cnt)
 
-         Data_to_html+= Template_AlertBlock2END
+         Data_to_html +=  Template_AlertBlock2END
 
-         Data_to_html+= Template_Row4
+         Data_to_html +=  Template_Row4
 
 
-         Data_to_html+=Template_Tail
+         Data_to_html += Template_Tail
 
          return(Data_to_html)
 
@@ -1134,132 +1179,133 @@ def OsseChartBuilder():
                                       Chart_DayCounter.append(data_dt)
 
                          except Exception as e:
+                           Betterror(e, inspect.stack()[0][3])
                            if DEBUG > 1:
                                chk = 0
                                info="OsseChartBuilder Error:",e
                                try:
-                                  info+="\nLen Line:",len(line)
+                                  info += "\nLen Line:",len(line)
                                   if len(line) > 0:
                                      chk = chk + 1
                                except:
                                   pass
                                try:
-                                  info+="\nmth:",mth
+                                  info += "\nmth:",mth
                                   if len(str(mth)) > 0:
                                      chk = chk + 1
                                except:
                                   pass
                                try:
-                                  info+="\nMONTH:",MONTH
+                                  info += "\nMONTH:",MONTH
                                   if len(str(MONTH)) > 0:
                                      chk = chk + 1
                                except:
                                        pass
 
                                try:
-                                  info+="\nhour:",hr
+                                  info += "\nhour:",hr
                                   if len(str(hr)) > 0:
                                      chk = chk + 1
                                except:
                                     pass
                                try:
-                                  info+="\nhtot:",hr_t
+                                  info += "\nhtot:",hr_t
                                   if len(str(hr_t)) > 0:
                                      chk = chk + 1
                                except:
                                     pass
                                try:
-                                 info+="\ndobj:",dateobj
+                                 info += "\ndobj:",dateobj
                                  if len(str(dateobj)) > 0:
                                      chk = chk + 1
                                except:
                                 pass
                                try:
-                                 info+="\ndata_dt:",data_dt
+                                 info += "\ndata_dt:",data_dt
                                  if len(str(data_dt)) > 0:
                                      chk = chk + 1
                                except:
                                   pass
                                if chk == 7:
-                                      info+="\nException in OsseChartBuilder but good to go \n"
-                                      info+="\nError:",e;DebugMode=(info,chk,line)
+                                      info += "\nException in OsseChartBuilder but good to go \n"
+                                      info += "\nError:",e;DebugMode=(info,chk,line)
                                else:
-                                      info+="\nException in OsseChartBuilder [No Go] \n"
-                                      info+="\nError:",e;DebugMode=(info,chk,line)
+                                      info += "\nException in OsseChartBuilder [No Go] \n"
+                                      info += "\nError:",e;DebugMode=(info,chk,line)
                            else:
                                 pass
 
 
 
 
-    Builder_Result +="""\n         name: 'Daily Alerts',
+    Builder_Result  += """\n         name: 'Daily Alerts',
         data: ["""
 #
     Chart_Alert.sort(key= lambda x: datetime.strptime(x.split("##")[1], '%Y-%m-%d-%H'))
 #
     for item in Chart_Alert:
           item =  str(item.split("##")[0])
-          Builder_Result += item +", "
+          Builder_Result  +=  item +", "
 
-    Builder_Result += """]
+    Builder_Result  +=  """]
     }, {"""
-    Builder_Result +="""\n         name: 'Daily Events',
+    Builder_Result  += """\n         name: 'Daily Events',
         data: ["""
 #
     Chart_Event.sort(key= lambda x: datetime.strptime(x.split("##")[1], '%Y-%m-%d-%H'))
 #
     for item in Chart_Event:
           item =  str(item.split("##")[0])
-          Builder_Result += item +", "
+          Builder_Result  +=  item +", "
 
-    Builder_Result += """]
+    Builder_Result  +=  """]
     }, {"""
 #
     Chart_Syscheck.sort(key= lambda x: datetime.strptime(x.split("##")[1], '%Y-%m-%d-%H'))
 #
-    Builder_Result +="""\n         name: 'Daily Syscheck',
+    Builder_Result  += """\n         name: 'Daily Syscheck',
         data: ["""
     for item in Chart_Syscheck:
           item =  str(item.split("##")[0])
-          Builder_Result += item +", "
-    Builder_Result += """]
+          Builder_Result  +=  item +", "
+    Builder_Result  +=  """]
     }, {"""
 
 #
     Chart_Firewall.sort(key= lambda x: datetime.strptime(x.split("##")[1], '%Y-%m-%d-%H'))
 #
 
-    Builder_Result +="""\n         name: 'Daily Firewall',
+    Builder_Result  += """\n         name: 'Daily Firewall',
         data: ["""
     for item in Chart_Firewall:
           item =  str(item.split("##")[0])
-          Builder_Result += item +", "
+          Builder_Result  +=  item +", "
 
 
-    Builder_Result += """]
+    Builder_Result  +=  """]
     }, {"""
 
 #
     Chart_HourTotal.sort(key= lambda x: datetime.strptime(x.split("##")[1], '%Y-%m-%d-%H'))
 #
 
-    Builder_Result +="""\n         name: 'Total per Hour',
+    Builder_Result  += """\n         name: 'Total per Hour',
         data: ["""
     for item in Chart_HourTotal:
           item =  str(item.split("##")[0])
-          Builder_Result += item +", "
-    Builder_Result += """]
+          Builder_Result  +=  item +", "
+    Builder_Result  +=  """]
     }, {"""
 #
     Chart_DayCounter.sort(key= lambda x: datetime.strptime(x.split("##")[1], '%Y-%m-%d-%H'))
 #
-    Builder_Result +="""\n         name: 'Total per day',
+    Builder_Result  += """\n         name: 'Total per day',
         data: ["""
     for item in Chart_DayCounter:
           item =  str(item.split("##")[0])
-          Builder_Result += item +", "
+          Builder_Result  +=  item +", "
 
-    Builder_Result += "]\n"
+    Builder_Result  +=  "]\n"
 
     return(Builder_Result)
 
@@ -1361,24 +1407,26 @@ def UpdateWWW():
           if DEBUG > 2:
                DebugMode(Timediff,PastNow,now)
 
-          for hst,usr in zip(HOST_NAMES,HOSTS_USERS):
+          for hst,usr in zip(HOSTS_NAMES,HOSTS_USERS):
              try:
                 if usr.lower() != USER.lower():
-                    HOST_DICT[hst+"_Temp"]=str(ssh(usr.lower(),hst.(),"sensors")).split("temp1:        +")[1].split("°C")[0].split(".")[0]+"°C"
+                    HOST_DICT[hst+"_Temp"]=str(ssh(usr,hst.lower(),"sensors")).split("temp1:        +")[1].split("°C")[0].split(".")[0]+"°C"
                 else:
                     HOST_DICT[hst+"_Temp"]=str(subprocess.check_output(["sensors"]).decode("utf8")).split("temp1:        +")[1].split("°C")[0].split(".")[0]+"°C"
 
              except Exception as e:
+                Betterror(e, inspect.stack()[0][3])
                 if DEBUG > 1:
                    info="Out of Ssh Error:",e;DebugMode(info)
                 HOST_DICT[hst+"_Temp"]= "???"
 
              try:
                if usr.lower() != USER.lower():
-                   HOST_DICT[hst+"_Space"]=str(ssh(usr.lower(),hst.(),"df -h /")).split("%")[1][-3:]+"%"
+                   HOST_DICT[hst+"_Space"]=str(ssh(usr,hst.lower(),"df -h /")).split("%")[1][-3:]+"%"
                else:
-                   HOST_DICT[hst+"_Space"]=str(subprocess.check_output(["df","-h","/"]).decode("utf8")).split("%")[1][-3:]+"%
+                   HOST_DICT[hst+"_Space"]=str(subprocess.check_output(["df","-h","/"]).decode("utf8")).split("%")[1][-3:]+"%"
              except Exception as e:
+                Betterror(e, inspect.stack()[0][3])
                 if DEBUG > 1:
                    info="Out of Ssh Error:",e;DebugMode(info)
                 HOST_DICT[hst+"_Space"]= "???"
@@ -1400,7 +1448,7 @@ def UpdateWWW():
           if DEBUG > 2:
                DebugMode(TimediffCam,PastNowCam,now)
           try:
-              CamCounter = str(ssh(CAM_USER-HOST[0],CAM_USER-HOST[1],CAM_CMD))
+              CamCounter = str(ssh(CAM_USER_HOST[0],CAM_USER_HOST[1],CAM_CMD))
               CamCounter = CamCounter.splitlines()
 
               for lines in CamCounter:
@@ -1413,6 +1461,7 @@ def UpdateWWW():
                    if "LivingCam" in lines:
                       LivingCam = lines.split("LivingCam :")[1].split(" ")[0]
           except Exception as e:
+                Betterror(e, inspect.stack()[0][3])
                 if DEBUG > 1:
                       info="\nError in CamCounter:",e;DebugMode(info)
 
@@ -1426,7 +1475,7 @@ def UpdateWWW():
 
      if PastNowChart == 9999999999:
           TimediffChart = 900009
-          if DEBUG > 2:
+               if DEBUG > 2:
               DebugMode(TimediffChart,PastNowChart,now)
      else:
           TimediffChart = round((now -PastNowChart).total_seconds())
@@ -1436,8 +1485,8 @@ def UpdateWWW():
      if TimediffChart > 900001:
           PastNowChart = now
           OsseChart = ChartScriptHead
-          OsseChart+= OsseChartBuilder()
-          OsseChart+= ChartScriptTail
+          OsseChart +=  OsseChartBuilder()
+          OsseChart +=  ChartScriptTail
           if DEBUG > 2:
               DebugMode(TimediffChart,PastNowChart,now)
 
@@ -1447,7 +1496,7 @@ def UpdateWWW():
 
      Split_Or_Not("no_sort","index")
 
-     for hst in HOST_NAMES:
+     for hst in HOSTS_NAMES:
 
           Split_Or_Not("by_name",hst.lower())
 
@@ -1458,6 +1507,7 @@ def UpdateWWW():
          Split_Or_Not("by_lvl",str(lvl))
 
      if ServerReady is True:
+           Thread(cherrypy.quickstart(Osserver(), "/", Cherryconf)).start()
            print("\nDone Loading Datas\nYou Can Now Connect To http://%s .\n"%(socket.gethostbyname(socket.gethostname())))
            ServerReady = False
 ##################################################################################
@@ -1470,9 +1520,6 @@ def main():
                     Loading()
 
      Done = False
-
-     ServerWeb()
-
      with open(MAIL_PATH,"rb") as mailbox:
           Mails=Mbr(mailbox)
           for M in Mails:
@@ -1517,7 +1564,7 @@ def main():
 if __name__ == "__main__":
 
 
-     DEBUG = 0
+     DEBUG = 1
 
 
      tput=subprocess.Popen(['tput', 'cols'], stdout=subprocess.PIPE)
@@ -1571,4 +1618,4 @@ if __name__ == "__main__":
      Subjects = []
      Dates = []
      Messages = []
-     main()
+     Thread(main()).start() 
