@@ -11,8 +11,12 @@ from Conf.static.gauge import *
 from Conf.static.ossechart import *
 from Conf.osserver_conf import *
 
-
-
+ServerReady = True
+tput=subprocess.Popen(['tput', 'cols'], stdout=subprocess.PIPE)
+CharPos = 1
+loading_txt = ""
+GoBack = False
+MAXCHAR = int(tput.communicate()[0].strip())-1
 def Betterror(error_msg, def_name):
     Err_to_log = "Empty"
     CurrentDate = datetime.now()
@@ -107,7 +111,7 @@ def Loading():
 def Mbr(mbx):
     global Done
     global FirstLoad
-
+    global ServerReady
 
     if DEBUG > 0:
            print("\nIn Mbr\n")
@@ -1595,9 +1599,8 @@ if __name__ == "__main__":
         HOST_DICT[key] = value 
         key = name+"_Alert" 
         value = ""
-        HOST_DICT[key] = value 
-
-
+        HOST_DICT[key] = value
+ 
      FirstLoad = True
      ServerReady = True
      Done = False
@@ -1619,3 +1622,4 @@ if __name__ == "__main__":
      Dates = []
      Messages = []
      main()
+#     Thread(main()).start()
