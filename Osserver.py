@@ -580,7 +580,7 @@ def Avatar_Accordeon(hname):
     hname = hname.lower().replace(" ","")
     for name,img in zip(HOSTS_NAMES,HOSTS_IMGS):
         if name.lower() == hname.lower():
-          print("GOOD %s == %s = %s"%(name.lower(),hname.lower(),hname==name.lower()))
+          #print("GOOD %s == %s = %s"%(name.lower(),hname.lower(),hname==name.lower()))
           return('<img class="avatar" src="images/'+ img +'" alt="'+ name +'" style="width: 14px; height: 14px;">')
     if DEBUG > 0:
             for hn in HOSTS_NAMES:
