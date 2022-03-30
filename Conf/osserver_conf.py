@@ -22,7 +22,13 @@ HOSTS_IMGS =  [host_name+".png" for host_name in HOSTS_NAMES]
 CAM_USER_HOST = ["HOSTNAME1","HOSTNAME2",]
 CAM_CMD ="cat /home/"+CAM_USER_HOST[0]+"/Documents/checkservice/wall.tmp"
 TMP_FIX = ["USERNAME1@HOSTNAME1.FQDM","X-Original-To: USERNAME1@HOSTNAME1.FQDM","USERNAME1","HOSTNAME1"]
-DEBUG = 3
+
+#DEBUG = [
+#         "sorting","checkhostname","checklvl","checkdate","checkdate",
+#         "ssh","accordeon","chart","split","BuildHtml","update","main","mbr","save","timer",
+#         "all"]
+
+DEBUG = ["off"]
 
 Cherryconf = {
 
@@ -52,12 +58,19 @@ Cherryconf = {
 }
 
 
-if DEBUG >=1:
+Sep="\n~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\n"
+Septop="\n~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~top~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\n"
+Sepmid="\n~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~mid~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\n"
+Sepend="\n~~~~~~~~~~~~~~~~~~~~~~~~~~~~~end~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\n"
+
+if "off" not in DEBUG:
+  print("\n\nosserver_conf:\n")
+  print("Debug:",DEBUG)
   print("User:",USER)
   print("OSSEC_PATH",OSSEC_PATH)
   print("MAIL_PATH:",MAIL_PATH)
   print("Script_PAth:",SCRIPT_PATH)
   print("WWW_PATH:",str(WWW_PATH))
-  if DEBUG >=1:
-    for name,user,ip in zip(HOSTS_NAMES,HOSTS_USERS,HOSTS_IPS):
+  for name,user,ip in zip(HOSTS_NAMES,HOSTS_USERS,HOSTS_IPS):
       print("This Host:"+name+" has this User:"+user+" with this ip:"+ip)
+  print("\n\n")
