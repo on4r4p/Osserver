@@ -754,7 +754,7 @@ def Acc_End(Current_Item, Total_Items, Current_Page, Page_Name):
                 info,
                 Split_End,
                 Current_Item,
-                Total_Item,
+                Total_Items,
                 Current_Page,
                 Page_Name,
             )
