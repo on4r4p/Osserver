@@ -745,7 +745,7 @@ def Avatar(hname):
 def Acc_End(Current_Item, Total_Items, Current_Page, Page_Name):
     F = "Acc_End"
     if Split_End is True or Current_Item == Total_Items:
-        info = "Current_Item == Total_Item ", Current_Item == Total_Item
+        info = "Current_Item == Total_Item ", Current_Item == Total_Items
         if DoDbg(F) is True:
             istk = inspect.stack()
             DebugMode(
@@ -1129,7 +1129,9 @@ def BuildHtml(sort=None, arg=None):
     if os.path.exists(lastfile):
         pass
     else:
+
         day = day - timedelta(days=1)
+        copylastfile = lastfile
         lastfile = (
             str(statpath)
             + str(day.year)
@@ -1143,12 +1145,14 @@ def BuildHtml(sort=None, arg=None):
             pass
         else:
             print("Lastfile File not found ", lastfile)
-            sys.exit()
-
+            if DoDbg(F) is True:
+                        istk = inspect.stack()
+                        DebugMode("Lastfile File not found", istk,copylastfile,lastfile,Yesterday_lastfile)
     if os.path.exists(Yesterday_lastfile):
         pass
     else:
         yesterday = yesterday - timedelta(days=1)
+        copyYesterday_lastfile=Yesterday_lastfile
         Yesterday_lastfile = (
             str(statpath)
             + str(yesterday.year)
@@ -1162,7 +1166,9 @@ def BuildHtml(sort=None, arg=None):
             pass
         else:
             print("Yesterday File not found ", Yesterday_lastfile)
-            sys.exit()
+            if DoDbg(F) is True:
+                        istk = inspect.stack()
+                        DebugMode("Lastfile File not found", istk,Yesterday_lastfile, lastfile,Yesterday_lastfile)
 
     with open(lastfile) as f:
         for line in f:
