@@ -12,23 +12,24 @@ from Conf.static.ossechart import *
 from Conf.osserver_conf import *
 
 FirstLoad = True
-ServerReady = True
+ServerReady = False
 Done = False
 To_Split = False
 Split_End = False
 Page_Number = 0
 Global_Rule_List = []
 Global_Lvl_List = []
+Hosts = []
+Levels = []
+Dates = []
+Subjects = []
+Messages = []
+Host_Alerts = {}
 GarageCam = ""
 GardenCam = ""
 LivingCam = ""
 Time_Track = {"Gauge": [None, None], "Cam": [None, None], "Chart": [None, None]}
-Host_Alerts = {}
-Hosts = []
-Levels = []
-Subjects = []
-Dates = []
-Messages = []
+Mails_Archive = []
 tput = subprocess.Popen(["tput", "cols"], stdout=subprocess.PIPE)
 CharPos = 1
 loading_txt = ""
@@ -36,37 +37,37 @@ GoBack = False
 MAXCHAR = int(tput.communicate()[0].strip()) - 1
 
 
-def Logging(Err_to_log, CurrentDate):
+def Logging(Err_to_log,call_function, CurrentDate):
     Err_to_log = "\n------\n".join(Err_to_log)
-    if os.path.isfile("Error.log") is False:
-        open("Error.log", "w")
+    File_to_save = "%s%s.log"%(LOG_PATH,call_function)
+    Safelog = "%sError.Safe.Log"%LOG_PATH
+    if os.path.isfile(File_to_save) is False:
+        open(File_to_save, "w")
     try:
-        with open("Error.log", "a") as fuck:
+        with open(File_to_save, "a") as fuck:
             fuck.write("\n==========================\n" + str(CurrentDate))
             fuck.write("\n" + Err_to_log)
             fuck.write("\n==========================\n")
     except Exception as e:
-        if os.path.isfile("Error.Safe.log") is False:
-            open("Error.Safe.log", "w")
-        with open("Error.Safe.log") as fuck:
+        if os.path.isfile(Safelog) is False:
+            open(Safelog, "w")
+        with open(Safelog) as fuck:
             fuck.write("\n" + str(CurrentDate))
             fuck.write("\n" + str(e))
 
 
+def DoDbg(function):
+    if function.lower() in DEBUG or "all" in DEBUG:
+       return True
+    else:
+       return False
+
+
 def DebugMode(info_msg, stack, *variables):
-
-    if "off" in DEBUG:
-        return ()
-
-    try:call_function=stack[0][3]
-    except:return
-
-    if call_function.lower() in DEBUG or "all" in DEBUG:
         Err_to_log = []
         CurrentDate = datetime.now()
         var_names = []
         var_values = []
-
 
         for var23332 in variables:
             try:
@@ -87,41 +88,40 @@ def DebugMode(info_msg, stack, *variables):
         for n, v in zip(var_names, var_values):
             Err_to_log.append("%s = %s" % (n, v))
 
-
-
         try:
-            Stack_lst =["And said this: "+str(info_msg)]
-            for n,stk in enumerate(stack):
-               Dbmsg = ""
-               Stack_lst.append("\n")
-               if "filename" in dir(stk):
-                   if len(stack) > 0:
-                      if n == 0:
-                         Dbmsg += "Finally "+str(stk.filename)
-                      elif n == len(stack)-1:
-                         Dbmsg += str(stk.filename)
-                      else:
-                         Dbmsg += "Then "+str(stk.filename)
-                   else:
-                         Dbmsg += str(stk.filename)
+            Stack_lst = ["And said this: " + str(info_msg)]
+            for n, stk in enumerate(stack):
+                Dbmsg = ""
+                Stack_lst.append("\n")
+                if "filename" in dir(stk):
+                    if len(stack) > 0:
+                        if n == 0:
+                            Dbmsg += "Finally " + str(stk.filename)
+                        elif n == len(stack) - 1:
+                            Dbmsg += str(stk.filename)
+                        else:
+                            Dbmsg += "Then " + str(stk.filename)
+                    else:
+                        Dbmsg += str(stk.filename)
 
-               if "function" in dir(stk):
-                   Dbmsg += " function: "+str(stk.function)
-               if "lineno" in dir(stk):
-                   Dbmsg += " at line number: "+str(stk.lineno)
-               if "code_context" in dir(stk):
-                   Dbmsg += "\ncalled:%s\n"%str(stk.code_context)
-               Stack_lst.append(Dbmsg)
+                if "function" in dir(stk):
+                    Dbmsg += " function: " + str(stk.function)
+                if "lineno" in dir(stk):
+                    Dbmsg += " at line number: " + str(stk.lineno)
+                if "code_context" in dir(stk):
+                    Dbmsg += "\ncalled:%s\n" % str(stk.code_context)
+                Stack_lst.append(Dbmsg)
             Stack_lst.append("\nStack:\n\n")
             Stack_lst.reverse()
             Err_to_log.append("".join(Stack_lst))
         except Exception as e:
             Err_to_log.append(
                 "!!\nFile:Osserver.py has encounter an error in DebugMode() \nError Message:%s\nInitial Debug Message was:%s\n!!"
-                % (e,info_msg)
+                % (e, info_msg)
             )
         Err_to_log.reverse()
-        return Logging(Err_to_log, CurrentDate)
+        #print(Err_to_log)
+        return Logging(Err_to_log,stack[0][3], CurrentDate)
 
 
 def Loading():
@@ -130,7 +130,7 @@ def Loading():
     global loading_txt
     point = "."
     space = " "
-    while ServerReady is True:
+    while ServerReady is False:
         lnt = len(loading_txt)
         if lnt < MAXCHAR and GoBack is False:
             loading_txt = (point * CharPos) + space
@@ -149,96 +149,137 @@ def Loading():
             else:
                 GoBack = False
 
-def Mbr(mbx):
-    global Done
-    global FirstLoad
-    global ServerReady
 
-    lock = False
-    lines = []
-    while True:
+def Get_Mails(file):
+    global Mails_Archive
+
+    F = "Get_Mails"
+    Lock = False
+    Lines = []
+
+    try:
+        with open(file, "rb") as m:
+            mailbox = m.readlines()
+    except Exception as e:
+        istk = inspect.stack()
+        DebugMode(
+            str(e),
+            istk,
+            file,
+            Lock,
+        )
+        mailbox = []
+
+    for line in mailbox:
         try:
-            line = mbx.readline()
-            if line.startswith(b"From "):
-                 istk=inspect.stack();DebugMode("line.startswith(b'From ')", istk, line)
-
             if line == b"" or line.startswith(b"From "):
-                istk=inspect.stack();DebugMode("inside conditional", istk)
+                if DoDbg(F) is True:
+                    istk = inspect.stack()
+                    DebugMode("inside conditional", istk)
 
                 if line == b"":
-                    for l in lines:
-                        if l.startswith(b"From "):
-                            istk=inspect.stack();DebugMode(
-                                "Line is empty but full mail obj found in Lines[] so going to yield",
-                                istk,
-                                len(lines),
-                            )
-                            yield email.message_from_bytes(b"".join(lines), policy=default)
+                    if len(Lines) > 1:
+                        for l in Lines:
+                            if l.startswith(b"From "):
+                                if DoDbg(F) is True:
+                                    istk = inspect.stack()
+                                    DebugMode(
+                                        "Line is empty but full mail obj found in Lines[] so going to yield",
+                                        istk,
+                                        len(Lines),
+                                    )
 
-                            istk=inspect.stack();DebugMode("Setting Lines[] to empty", istk)
-                            lines = []
-                            # break
-                    if Done is False:
-                        if ServerReady is False:
-                            print("Waiting...")
-                        if FirstLoad is True:
-                            Update()
-                            FirstLoad = False
-                        istk=inspect.stack();DebugMode("From not in lines:", istk, lines)
-                        Done = True
-                        time.sleep(5)
+                                if (
+                                    email.message_from_bytes(
+                                        b"".join(Lines), policy=default
+                                    )
+                                    not in Mails_Archive
+                                ):
+                                    Mails_Archive.append(
+                                        email.message_from_bytes(
+                                            b"".join(Lines), policy=default
+                                        )
+                                    )
+                                else:
+                                    if DoDbg(F) is True:
+                                        istk = inspect.stack()
+                                        DebugMode("Email already in archive", istk)
+                                if DoDbg(F) is True:
+                                    istk = inspect.stack()
+                                    DebugMode("Setting Lines[] to empty", istk)
+                                Lines = []
+                                # break
                     else:
-                        istk=inspect.stack();DebugMode("Done=", istk, Done)
-                        #                       Done = False
-                        time.sleep(5)
+                        Lines = []
+                        if DoDbg(F) is True:
+                            istk = inspect.stack()
+                            DebugMode("len(Lines[]) < 0 ,Lines[] now empty", istk)
 
-                if line.startswith(b"From "):
-                    istk=inspect.stack();DebugMode(
-                        "Inside conditional from/befor Yield",
-                        istk,
-                        len(lines),
-                    )
-                    if len(lines) > 1:
-                        yield email.message_from_bytes(b"".join(lines), policy=default)
+                elif line.startswith(b"From "):
+                    if DoDbg(F) is True:
+                        istk = inspect.stack()
+                        DebugMode(
+                            "Inside conditional from/befor append to archive",
+                            istk,
+                            len(Lines),
+                        )
+                    if len(Lines) > 1:
+                        Mails_Archive.append(
+                            email.message_from_bytes(b"".join(Lines), policy=default)
+                        )
 
-                if b"From " in line:
-                    lines = []
-                    lines.append(line)
-                    lock = True
-                    istk=inspect.stack();DebugMode(
-                        "Lines[] is now empty Append line in lines[]",
-                        istk,
-                        lock,
-                    )
+                elif b"From " in line:
+                    Lines = []
+                    Lines.append(line)
+                    Lock = True
+                    if DoDbg(F) is True:
+                        istk = inspect.stack()
+                        DebugMode(
+                            "Lines[] is now empty Append line in Lines[]",
+                            istk,
+                            Lock,
+                        )
                 else:
-                    istk=inspect.stack();DebugMode(
-                        "No From in line so Lines[] is now empty", istk
-                    )
+                    if DoDbg(F) is True:
+                        istk = inspect.stack()
+                        DebugMode("No From in line so Lines[] is now empty", istk)
                     line = []
 
-            if lock is False:
+            if Lock is False:
 
                 if len(line) > 1 or line is b"\n":
-                    istk=inspect.stack();DebugMode("Line goes to Lines[]", istk, line is b"\n")
+                    if DoDbg(F) is True:
+                        istk = inspect.stack()
+                        DebugMode("Line goes to Lines[]", istk, line is b"\n")
                     Done = False
-                    lines.append(line)
+                    Lines.append(line)
                 else:
-                    istk=inspect.stack();DebugMode(
-                        "line is not long enough to append to Lines[]",
-                        istk,
-                        line,
-                    )
+                    if DoDbg(F) is True:
+                        istk = inspect.stack()
+                        DebugMode(
+                            "line is not long enough to append to Lines[]",
+                            istk,
+                            line,
+                        )
             else:
-                istk=inspect.stack();DebugMode(
-                    "Lock prevent appending line in lines[] now Lock is back to false",
-                    istk,
-                )
-                lock = False
+                if DoDbg(F) is True:
+                    istk = inspect.stack()
+                    DebugMode(
+                        "Lock prevent appending line in Lines[] now Lock is back to false",
+                        istk,
+                    )
+                Lock = False
 
         except Exception as e:
-            istk=inspect.stack();DebugMode(str(e), istk)
+            if DoDbg(F) is True:
+                istk = inspect.stack()
+                DebugMode(str(e), istk)
+
+    return Mails_Archive
+
 
 def Sorting(mode, arg):
+    F = "Sorting"
     Hosts_Sort = []
     Levels_Sort = []
     Dates_Sort = []
@@ -246,8 +287,9 @@ def Sorting(mode, arg):
     Subjects_Sort = []
 
     if mode is "by_name":
-
-        istk=inspect.stack();DebugMode("by name:", istk, mode, arg)
+        if DoDbg(F) is True:
+            istk = inspect.stack()
+            DebugMode("by name:", istk, mode, arg)
 
         for name, lvl, dat, body, title in zip(
             Hosts, Levels, Dates, Messages, Subjects
@@ -265,35 +307,41 @@ def Sorting(mode, arg):
                 lndatsort = len(Dates_Sort)
                 lnmesssort = len(Messages_Sort)
                 lnsubjsort = len(Subjects_Sort)
-                istk=inspect.stack();DebugMode(
-                    "in name lower:",
-                    istk,
-                    name,
-                    lvl,
-                    dat,
-                    body,
-                    title,
-                    lnhostsort,
-                    lnlvlsort,
-                    lndatsort,
-                    lnmesssort,
-                    lnsubjsort,
-                )
+                if DoDbg(F) is True:
+                    istk = inspect.stack()
+                    DebugMode(
+                        "in name lower:",
+                        istk,
+                        name,
+                        lvl,
+                        dat,
+                        body,
+                        title,
+                        lnhostsort,
+                        lnlvlsort,
+                        lndatsort,
+                        lnmesssort,
+                        lnsubjsort,
+                    )
 
             else:
-                istk=inspect.stack();DebugMode(
-                    "else name lower:",
-                    istk,
-                    name,
-                    lvl,
-                    dat,
-                    body,
-                    title,
-                    arg,
-                )
+                if DoDbg(F) is True:
+                    istk = inspect.stack()
+                    DebugMode(
+                        "else name lower:",
+                        istk,
+                        name,
+                        lvl,
+                        dat,
+                        body,
+                        title,
+                        arg,
+                    )
 
     if mode is "by_lvl":
-        istk=inspect.stack();DebugMode("by lvl:", istk, mode)
+        if DoDbg(F) is True:
+            istk = inspect.stack()
+            DebugMode("by lvl:", istk, mode)
 
         for name, lvl, dat, body, title in zip(
             Hosts, Levels, Dates, Messages, Subjects
@@ -304,12 +352,14 @@ def Sorting(mode, arg):
                 Dates_Sort.append(dat)
                 Messages_Sort.append(body)
                 Subjects_Sort.append(title)
-                istk=inspect.stack();DebugMode(
-                    "lvl==arg", istk, name, lvl, dat, body, title, arg
-                )
+                if DoDbg(F) is True:
+                    istk = inspect.stack()
+                    DebugMode("lvl==arg", istk, name, lvl, dat, body, title, arg)
 
     if mode is "by_rule":
-        istk=inspect.stack();DebugMode("by rule:", istk, mode, arg)
+        if DoDbg(F) is True:
+            istk = inspect.stack()
+            DebugMode("by rule:", istk, mode, arg)
 
         for name, lvl, dat, body, title in zip(
             Hosts, Levels, Dates, Messages, Subjects
@@ -317,44 +367,54 @@ def Sorting(mode, arg):
             rule = ""
             for line in body.splitlines():
                 if "Rule: " in line:
-                    istk=inspect.stack();DebugMode("Found Rule id in line:", istk, line)
+                    if DoDbg(F) is True:
+                        istk = inspect.stack()
+                        DebugMode("Found Rule id in line:", istk, line)
                     try:
                         rule = int(line.split("Rule: ")[1].split(" fired")[0])
                         break
                     except Exception as e:
-                        istk=inspect.stack();DebugMode(str(e), istk, line)
+                        if DoDbg(F) is True:
+                            istk = inspect.stack()
+                            DebugMode(str(e), istk, line)
 
             if str(rule) == str(arg):
-                istk=inspect.stack();DebugMode(
-                    "rule==arg",
-                    istk,
-                    "Rule = arg ? %s" % (str(rule) == str(arg)),
-                    rule,
-                    arg,
-                )
+                if DoDbg(F) is True:
+                    istk = inspect.stack()
+                    DebugMode(
+                        "rule==arg",
+                        istk,
+                        "Rule = arg ? %s" % (str(rule) == str(arg)),
+                        rule,
+                        arg,
+                    )
                 Hosts_Sort.append(name)
                 Levels_Sort.append(lvl)
                 Dates_Sort.append(dat)
                 Messages_Sort.append(body)
                 Subjects_Sort.append(title)
-                istk=inspect.stack();DebugMode(
-                    "aftersort",
-                    istk,
-                    name,
-                    lvl,
-                    dat,
-                    body,
-                    title,
-                    rule,
-                )
+                if DoDbg(F) is True:
+                    istk = inspect.stack()
+                    DebugMode(
+                        "aftersort",
+                        istk,
+                        name,
+                        lvl,
+                        dat,
+                        body,
+                        title,
+                        rule,
+                    )
             else:
-                istk=inspect.stack();DebugMode(
-                    "rule!=arg",
-                    istk,
-                    "Else:Rule = arg ? %s" % (str(rule) == str(arg)),
-                    rule,
-                    arg,
-                )
+                if DoDbg(F) is True:
+                    istk = inspect.stack()
+                    DebugMode(
+                        "rule!=arg",
+                        istk,
+                        "Else:Rule = arg ? %s" % (str(rule) == str(arg)),
+                        rule,
+                        arg,
+                    )
 
     Hosts_Sort.reverse()
     Levels_Sort.reverse()
@@ -365,41 +425,44 @@ def Sorting(mode, arg):
     return (Hosts_Sort, Levels_Sort, Dates_Sort, Messages_Sort, Subjects_Sort)
 
 
-def CheckHostName(Sender, Dest, Sub, Mess):
-
+def CheckHost(Sender, Dest, Sub, Mess):
+    F = "CheckHost"
     hostname = ""
 
     for hst in HOSTS_NAMES:
         if hst.lower() in Sub.lower():
             hostname = hst.capitalize()
-            istk=inspect.stack();DebugMode(
-                "Search Sub", istk, "Found something", hst, hostname
-            )
+            if DoDbg(F) is True:
+                istk = inspect.stack()
+                DebugMode("Search Sub", istk, "Found something", hst, hostname)
             return hostname
 
     for hst in HOSTS_NAMES:
         if hst.lower() in Sender.lower():
             hostname = hst.capitalize()
-            istk=inspect.stack();DebugMode(
-                "Search Sender", istk, "Found something", hst, hostname
-            )
+            if DoDbg(F) is True:
+                istk = inspect.stack()
+                DebugMode("Search Sender", istk, "Found something", hst, hostname)
             return hostname
     hostname = "Unknown"
-    istk=inspect.stack();DebugMode(
-        "Hostname not found",
-        istk,
-        Sub,
-        Done,
-        Sender,
-        Dest,
-        Mess,
-        hostname,
-    )
+    if DoDbg(F) is True:
+        istk = inspect.stack()
+        DebugMode(
+            "Hostname not found",
+            istk,
+            Sub,
+            Done,
+            Sender,
+            Dest,
+            Mess,
+            hostname,
+        )
 
     return hostname
 
 
 def CheckLvl(Sender, Dest, Sub, Mess):
+    F = "CheckLvl"
 
     if "checkservice.py" in Sub:
         for line in Mess.splitlines():
@@ -409,10 +472,12 @@ def CheckLvl(Sender, Dest, Sub, Mess):
                     lvl = line.split("Summary Lvl ")[1].split(" at")[0].replace(" ", "")
                     return lvl
                 except Exception as e:
-                    DebugMode = (
-                        "Checkservice.py lvl error:%s" % e,
-                        istk,
-                    )
+                    if DoDbg(F) is True:
+                        istk = inspect.stack()
+                        DebugMode(
+                            "Checkservice.py lvl error:%s" % e,
+                            istk,
+                        )
                     lvl = "??"
                     return lvl
 
@@ -426,9 +491,9 @@ def CheckLvl(Sender, Dest, Sub, Mess):
                 return lvl
     except Exception as e:
         lvl = "??"
-        istk=inspect.stack();DebugMode(
-            str(e), istk, "Error:%s" % e, Sub, Sender, Dest, lvl, Mess
-        )
+        if DoDbg(F) is True:
+            istk = inspect.stack()
+            DebugMode(str(e), istk, "Error:%s" % e, Sub, Sender, Dest, lvl, Mess)
 
     if "Checkping" in Sub:
         lvl = 2
@@ -455,13 +520,14 @@ def CheckLvl(Sender, Dest, Sub, Mess):
 
     else:
         lvl = "??"
-        istk=inspect.stack();DebugMode(
-            "Error: lvl is ??", istk, Sub, Sender, Dest, lvl, Mess
-        )
+        if DoDbg(F) is True:
+            istk = inspect.stack()
+            DebugMode("Error: lvl is ??", istk, Sub, Sender, Dest, lvl, Mess)
     return lvl
 
 
 def CheckDate(Sender, Dest, Sub, Mess):
+    F = "CheckDate"
     dat = ""
     datDEBUG = ""
 
@@ -479,19 +545,21 @@ def CheckDate(Sender, Dest, Sub, Mess):
                     datDEBUG += "\nCheckservice:Exception Line :" + str(line)
                     datDEBUG += "\nCheckservice:Len Line :" + str(len(str(line)))
                     datDEBUG += "\nCheckservice:Len Dat :" + str(len(str(dat)))
-                    istk=inspect.stack();DebugMode(
-                        "line = line.split('at ')[1]", istk, datDEBUG
-                    )
+                    if DoDbg(F) is True:
+                        istk = inspect.stack()
+                        DebugMode("line = line.split('at ')[1]", istk, datDEBUG)
                     return dat
             else:
                 datDEBUG += "\nCheckservice:Exception Line :" + str(line)
                 datDEBUG += "\nCheckservice:Len Line :" + str(len(str(line)))
                 datDEBUG += "\nCheckservice:Len Dat :" + str(len(str(dat)))
-                istk=inspect.stack();DebugMode(
-                    "else  '====Checkservice.py Summary Lvl' in line:",
-                    istk,
-                    datDEBUG,
-                )
+                if DoDbg(F) is True:
+                    istk = inspect.stack()
+                    DebugMode(
+                        "else  '====Checkservice.py Summary Lvl' in line:",
+                        istk,
+                        datDEBUG,
+                    )
                 return dat
                 pass
 
@@ -509,117 +577,147 @@ def CheckDate(Sender, Dest, Sub, Mess):
                 datDEBUG += "\nException Line :" + str(line)
                 datDEBUG += "\nLen Line :" + str(len(str(line)))
                 datDEBUG += "\nLen Dat :" + str(len(str(dat)))
-                istk=inspect.stack();DebugMode(
-                    "dat = dparser.parse(str(line),fuzzy=True)",
-                    istk,
-                    datDEBUG,
-                )
+                if DoDbg(F) is True:
+                    istk = inspect.stack()
+                    DebugMode(
+                        "dat = dparser.parse(str(line),fuzzy=True)",
+                        istk,
+                        datDEBUG,
+                    )
 
     if len(str(dat)) <= 0:
-        istk=inspect.stack();DebugMode("DatDebug", istk, datDEBUG)
+        if DoDbg(F) is True:
+            istk = inspect.stack()
+            DebugMode("DatDebug", istk, datDEBUG)
 
         dat = str(datetime.now().strftime("%Y %m %d %H:%M:%S"))
         return dat
 
 
-def Stockvars(Sender, Dest, Sub, Mess):
+def Stockvars(Parsed):
     global Hosts
     global Levels
     global Dates
     global Subjects
     global Messages
-
     global Host_Alerts
 
+    F ="Stockvars"
     switch = False
 
-    hostname = ""
-    lvl = ""
-    dat = ""
-    now = datetime.now()
+    for p in Parsed:
+        Sender = p[0]
+        Dest = p[1]
+        Sub = p[2]
+        Mess = p[3]
+        hostname = ""
+        lvl = ""
+        dat = ""
+        now = datetime.now()
 
-    try:
-        hostname = re.search(r"\((.*?)\)", Sub).group(1).replace(" ", "")
-    except Exception as e:
-        istk=inspect.stack();DebugMode(str(e), istk, Sub)
-        hostname = "Unknown"
+        try:
+            hostname = re.search(r"\((.*?)\)", Sub)
+            if hostname:
+               hostname = hostname.group(1).replace(" ", "")
+            else:
+               hostname = "Unknown"
+        except Exception as e:
+            if DoDbg(F) is True:
+                istk = inspect.stack()
+                DebugMode(str(e), istk, Sub)
+            hostname = "Unknown"
 
-    if hostname.lower() not in HOSTS_NAMES:
-        hostname = CheckHostName(Sender, Dest, Sub, Mess)
-        Hosts.append(hostname)
-    else:
-        Hosts.append(hostname)
+        if hostname.lower() not in HOSTS_NAMES:
+            hostname = CheckHost(Sender, Dest, Sub, Mess)
+            Hosts.append(hostname)
+        else:
+            Hosts.append(hostname)
 
-    if hostname in Host_Alerts:
-        Host_Alerts[hostname] = int(Host_Alerts.get(hostname)) + 1
-    else:
-        Host_Alerts[hostname] = 1
+        if hostname in Host_Alerts:
+            Host_Alerts[hostname] = int(Host_Alerts.get(hostname)) + 1
+        else:
+            Host_Alerts[hostname] = 1
 
-    try:
-        lvl = re.search(r"Level (.*?)-", Sub).group(1).replace(" ", "")
-        int(lvl)
-    except Exception as e:
-        istk=inspect.stack();DebugMode(str(e), istk, Sub)
-        lvl = CheckLvl(Sender, Dest, Sub, Mess)
+        try:
+            lvl = re.search(r"Level (.*?)-", Sub)
+            if lvl:
+               lvl = lvl.group(1).replace(" ", "")
+               int(lvl)
+            else:
+               lvl = CheckLvl(Sender, Dest, Sub, Mess)
+        except Exception as e:
+            if DoDbg(F) is True:
+                istk = inspect.stack()
+                DebugMode(str(e), istk, Sub)
+            lvl = CheckLvl(Sender, Dest, Sub, Mess)
 
-    Levels.append(lvl)
+        Levels.append(lvl)
 
-    dat = CheckDate(Sender, Dest, Sub, Mess)
-    Dates.append(dat)
+        dat = CheckDate(Sender, Dest, Sub, Mess)
+        Dates.append(dat)
 
-    body = ""
-    for line in Mess.splitlines():
-        line = line.replace("\n", "<br>").replace("\t", "&nbsp;&nbsp;&nbsp;&nbsp;")
-        if "<![CDATA[PntLog(" in line:
-            newline = []
-            line = line.split(";]]>")
-            for l in line:
-                try:
-                    epoch = l.split("<![CDATA[PntLog(")[1].split(",")[0]
-                    temps = datetime.fromtimestamp(int(epoch)).strftime("%c")
-                    remove = "<![CDATA[PntLog(" + str(epoch)
-                    l = l.replace(remove, str(temps))
-                    newline.append(l)
-                except Exception as e:
-                    istk=inspect.stack();DebugMode(str(e), istk, Mess)
-            line = "<br>".join(newline)
-        body += str(line) + "<br>"
-    if len(str(body)) > 4:
-        Messages.append(str(body))
-    else:
-        istk=inspect.stack();DebugMode(
-            "Body len <= 4 Osserver Error:Message Content is missing.",
-            istk,
-            Done,
-            Sub,
-            Sender,
-            Dest,
-            lvl,
-            Mess,
-            hostname,
-        )
-        Messages.append("Osserver Error:Message Content is missing.")
+        body = ""
+        for line in Mess.splitlines():
+            line = line.replace("\n", "<br>").replace("\t", "&nbsp;&nbsp;&nbsp;&nbsp;")
+            if "<![CDATA[PntLog(" in line:
+                newline = []
+                line = line.split(";]]>")
+                for l in line:
+                    try:
+                        epoch = l.split("<![CDATA[PntLog(")[1].split(",")[0]
+                        temps = datetime.fromtimestamp(int(epoch)).strftime("%c")
+                        remove = "<![CDATA[PntLog(" + str(epoch)
+                        l = l.replace(remove, str(temps))
+                        newline.append(l)
+                    except Exception as e:
+                        if DoDbg(F) is True:
+                            istk = inspect.stack()
+                            DebugMode(str(e), istk, Mess)
+                line = "<br>".join(newline)
+            body += str(line) + "<br>"
+        if len(str(body)) > 4:
+            Messages.append(str(body))
+        else:
+            if DoDbg(F) is True:
+                istk = inspect.stack()
+                DebugMode(
+                    "Body len <= 4 Osserver Error:Message Content is missing.",
+                    istk,
+                    Done,
+                    Sub,
+                    Sender,
+                    Dest,
+                    lvl,
+                    Mess,
+                    hostname,
+                )
+            Messages.append("Osserver Error:Message Content is missing.")
 
-    if len(str(Sub)) > 0:
-        Subjects.append(Sub)
-    else:
-        istk=inspect.stack();DebugMode("Len Subj <= 0", istk, Sub)
-        Subjects.append("Osserver Error:Subject Content is missing.")
+        if len(str(Sub)) > 0:
+            Subjects.append(Sub)
+        else:
+            if DoDbg(F) is True:
+                istk = inspect.stack()
+                DebugMode("Len Subj <= 0", istk, Sub)
+            Subjects.append("Osserver Error:Subject Content is missing.")
 
 
-def ssh(usr, host, cmd):
 
+def Ssh(usr, host, cmd):
+    F = "Ssh"
     try:
         out = subprocess.check_output(
             ["ssh", "-i", SSH_KEY, "{}@{}".format(usr, host), cmd]
         )
         return out.decode("utf8")
     except Exception as e:
-        istk=inspect.stack();DebugMode(str(e), istk, usr, host, cmd)
+        if DoDbg(F) is True:
+            istk = inspect.stack()
+            DebugMode(str(e), istk, usr, host, cmd)
 
 
-def Avatar_Accordeon(hname):
-
+def Avatar(hname):
+    F = "Avatar"
     hname = hname.lower().replace(" ", "")
     for name, img in zip(HOSTS_NAMES, HOSTS_IMGS):
         info = "Is %s == %s : %s  Type hname %s Type hn %s" % (
@@ -629,7 +727,9 @@ def Avatar_Accordeon(hname):
             type(hname),
             type(name),
         )
-        istk=inspect.stack();DebugMode("Avatar_Accordeon", istk, info)
+        if DoDbg(F) is True:
+            istk = inspect.stack()
+            DebugMode("Avatar_Accordeon", istk, info)
         if name.lower() == hname.lower():
             # print("GOOD %s == %s = %s"%(name.lower(),hname.lower(),hname==name.lower()))
             return (
@@ -642,20 +742,22 @@ def Avatar_Accordeon(hname):
     return "??"
 
 
-def End_Item_Accordeon_To_Split(Current_Item, Total_Items, Current_Page, Page_Name):
-
+def Acc_End(Current_Item, Total_Items, Current_Page, Page_Name):
+    F = "Acc_End"
     if Split_End is True or Current_Item == Total_Items:
         info = "Current_Item == Total_Item ", Current_Item == Total_Item
-        istk=inspect.stack();DebugMode(
-            "Split_End is True or Current_Item == Total_Items:",
-            istk,
-            info,
-            Split_End,
-            Current_Item,
-            Total_Item,
-            Current_Page,
-            Page_Name,
-        )
+        if DoDbg(F) is True:
+            istk = inspect.stack()
+            DebugMode(
+                "Split_End is True or Current_Item == Total_Items:",
+                istk,
+                info,
+                Split_End,
+                Current_Item,
+                Total_Item,
+                Current_Page,
+                Page_Name,
+            )
 
         if Current_Item == Total_Items and Current_Page == 0:
             Accordeon_End_Item = """\n              <div class="accordion-group">
@@ -757,6 +859,7 @@ def Accordeon(sort=None, arg=None):
     global Last_Messages_Sort
     global Last_Subjects_Sort
 
+    F = "Accordeon"
     Accordeon_Html = ""
     Switch = False
 
@@ -808,17 +911,19 @@ def Accordeon(sort=None, arg=None):
             lndatsort = len(Dates_Sort)
             lnmesssort = len(Messages_Sort)
             lnsubjsort = len(Subjects_Sort)
-            istk=inspect.stack();DebugMode(
-                "if sort == no_sort:",
-                istk,
-                info,
-                To_Split,
-                lnhostsort,
-                lnlvlsort,
-                lndatsort,
-                lnmesssort,
-                lnsubjsort,
-            )
+            if DoDbg(F) is True:
+                istk = inspect.stack()
+                DebugMode(
+                    "if sort == no_sort:",
+                    istk,
+                    info,
+                    To_Split,
+                    lnhostsort,
+                    lnlvlsort,
+                    lndatsort,
+                    lnmesssort,
+                    lnsubjsort,
+                )
 
     else:  # To_Split is True:
         Hosts_Sort = Last_Hosts_Sort
@@ -832,17 +937,19 @@ def Accordeon(sort=None, arg=None):
         lndatsort = len(Dates_Sort)
         lnmesssort = len(Messages_Sort)
         lnsubjsort = len(Subjects_Sort)
-        istk=inspect.stack();DebugMode(
-            "if To_Split is False:",
-            istk,
-            info,
-            To_Split,
-            lnhostsort,
-            lnlvlsort,
-            lndatsort,
-            lnmesssort,
-            lnsubjsort,
-        )
+        if DoDbg(F) is True:
+            istk = inspect.stack()
+            DebugMode(
+                "if To_Split is False:",
+                istk,
+                info,
+                To_Split,
+                lnhostsort,
+                lnlvlsort,
+                lndatsort,
+                lnmesssort,
+                lnsubjsort,
+            )
 
     i = 1
     for name, lvl, dat, body, title in zip(
@@ -852,16 +959,18 @@ def Accordeon(sort=None, arg=None):
             if i == Last_Position or Switch is True:
 
                 info = "i == Last_Position", i == Last_Position
-                istk=inspect.stack();DebugMode(
-                    "for name,lvl,dat,body,title in zip(Hosts_Sort,Levels_Sort,Dates_Sort,Messages_Sort,Subjects_Sort):",
-                    istk,
-                    info,
-                    Switch,
-                )
+                if DoDbg(F) is True:
+                    istk = inspect.stack()
+                    DebugMode(
+                        "for name,lvl,dat,body,title in zip(Hosts_Sort,Levels_Sort,Dates_Sort,Messages_Sort,Subjects_Sort):",
+                        istk,
+                        info,
+                        Switch,
+                    )
 
                 Switch = True
                 To_Split = False
-                geticon = Avatar_Accordeon(name)
+                geticon = Avatar(name)
                 Accordeon_Html += """\n              <div class="accordion-group">
                 <div class="accordion-heading"> <a class="accordion-toggle" data-toggle="collapse"
                     data-parent="#accordion2" href="#collapse%s" aria-expanded="false">%s %s From %s Lvl %s :<br>%s</a> </div>
@@ -885,7 +994,9 @@ def Accordeon(sort=None, arg=None):
                     To_Split = True
                     info = "Split was True and i >Max and Max is:", Max_Items
                     info += "\nTotal item to be proceed :", len(Subjects_Sort) + 1
-                    istk=inspect.stack();DebugMode("if i > Max_Items:", istk, info, Switch)
+                    if DoDbg(F) is True:
+                        istk = inspect.stack()
+                        DebugMode("if i > Max_Items:", istk, info, Switch)
 
                     (
                         Last_Position,
@@ -903,7 +1014,7 @@ def Accordeon(sort=None, arg=None):
                         Subjects_Sort,
                     )
 
-                    Accordeon_Html += End_Item_Accordeon_To_Split(
+                    Accordeon_Html += Acc_End(
                         i, len(Subjects_Sort) + 1, Page_Number, arg
                     )
                     return Accordeon_Html
@@ -912,7 +1023,7 @@ def Accordeon(sort=None, arg=None):
 
         else:  # To_Split is False:
 
-            geticon = Avatar_Accordeon(name)
+            geticon = Avatar(name)
             Accordeon_Html += """\n              <div class="accordion-group">
                 <div class="accordion-heading"> <a class="accordion-toggle" data-toggle="collapse"
                     data-parent="#accordion2" href="#collapse%s" aria-expanded="false">%s %s From %s Lvl %s :<br>%s</a> </div>
@@ -935,7 +1046,9 @@ def Accordeon(sort=None, arg=None):
                 To_Split = True
                 info = "Split is now  True cause i >Max and Max is:", Max_Items
                 info += "\nTotal item to be proceed :", len(Subjects_Sort) + 1
-                istk=inspect.stack();DebugMode("if i > Max_Items:", istk, info, Switch)
+                if DoDbg(F) is True:
+                    istk = inspect.stack()
+                    DebugMode("if i > Max_Items:", istk, info, Switch)
 
                 (
                     Last_Position,
@@ -953,24 +1066,20 @@ def Accordeon(sort=None, arg=None):
                     Subjects_Sort,
                 )
 
-                Accordeon_Html += End_Item_Accordeon_To_Split(
-                    i, len(Subjects_Sort) + 1, Page_Number, arg
-                )
+                Accordeon_Html += Acc_End(i, len(Subjects_Sort) + 1, Page_Number, arg)
 
                 return Accordeon_Html
 
     Split_End = True
-    Accordeon_Html += End_Item_Accordeon_To_Split(
-        i, len(Subjects_Sort) + 1, Page_Number, arg
-    )
+    Accordeon_Html += Acc_End(i, len(Subjects_Sort) + 1, Page_Number, arg)
     return Accordeon_Html
 
 
 def BuildHtml(sort=None, arg=None):
-
     global Global_Lvl_List
     global Global_Rule_List
 
+    F = "BuildHtml"
     statpath = OSSEC_STATS_PATH
 
     Data_to_html = ""
@@ -1338,7 +1447,7 @@ ant;">Alerts
 
 
 def ToJs(month=None, hour=None):
-
+    F = "ToJs"
     if month:
         month = int(month) - 1
         if month == -1:
@@ -1351,8 +1460,8 @@ def ToJs(month=None, hour=None):
         return hour
 
 
-def OsseChartBuilder():
-
+def ChartBuilder():
+    F = "ChartBuilder"
     Chart_Alert = []
     Chart_Event = []
     Chart_Syscheck = []
@@ -1478,7 +1587,7 @@ def OsseChartBuilder():
 
             except Exception as e:
                 chk = 0
-                info = "OsseChartBuilder Error:", e
+                info = "ChartBuilder Error:", e
                 try:
                     info += "\nLen Line:", len(line)
                     if len(line) > 0:
@@ -1523,25 +1632,27 @@ def OsseChartBuilder():
                 except:
                     pass
                 if chk == 7:
-                    info += "\nException in OsseChartBuilder but good to go \n"
+                    info += "\nException in ChartBuilder but good to go \n"
                     info += "\nError:", e
-                    DebugMode = (
-                        "with open(dailylog) as log",
-                        istk,
-                        info,
-                        chk,
-                        line,
-                    )
+                    if DoDbg(F) is True:
+                        DebugMode(
+                            "with open(dailylog) as log",
+                            istk,
+                            info,
+                            chk,
+                            line,
+                        )
                 else:
-                    info += "\nException in OsseChartBuilder [No Go] \n"
+                    info += "\nException in ChartBuilder [No Go] \n"
                     info += "\nError:", e
-                    DebugMode = (
-                        "with open(dailylog) as log",
-                        istk,
-                        info,
-                        chk,
-                        line,
-                    )
+                    if DoDbg(F) is True:
+                        DebugMode(
+                            "with open(dailylog) as log",
+                            istk,
+                            info,
+                            chk,
+                            line,
+                        )
 
     Builder_Result += """\n         name: 'Daily Alerts',
         data: ["""
@@ -1622,9 +1733,11 @@ def OsseChartBuilder():
     return Builder_Result
 
 
-def Split_Or_Not(sort, arg):
+def Spliter(sort, arg):
     global Page_Number
     global To_Split
+
+    F = "Spliter"
 
     if sort is "by_lvl":
         Title = "lvl" + str(arg)
@@ -1634,9 +1747,9 @@ def Split_Or_Not(sort, arg):
         Title = str(arg)
 
     while True:
-        istk=inspect.stack();DebugMode(
-            "in Split_Or_Not", istk, Page_Number, To_Split, sort, arg
-        )
+        if DoDbg(F) is True:
+            istk = inspect.stack()
+            DebugMode("in Spliter", istk, Page_Number, To_Split, sort, arg)
 
         Page_To_Save = BuildHtml(sort, arg)
 
@@ -1654,25 +1767,29 @@ def Split_Or_Not(sort, arg):
             Page_Number = Page_Number + 1
 
         else:
-            istk=inspect.stack();DebugMode(
-                "in Split_Or_Not",
-                istk,
-                Page_Number,
-                To_Split,
-                sort,
-                arg,
-            )
-            #                Page_To_Save=BuildHtml(sort,arg)
-
-            if Page_Number > 0:
-                istk=inspect.stack();DebugMode(
-                    "Going to break of Split_Or_Not",
+            if DoDbg(F) is True:
+                istk = inspect.stack()
+                DebugMode(
+                    "in Spliter",
                     istk,
                     Page_Number,
                     To_Split,
                     sort,
                     arg,
                 )
+            #                Page_To_Save=BuildHtml(sort,arg)
+
+            if Page_Number > 0:
+                if DoDbg(F) is True:
+                    istk = inspect.stack()
+                    DebugMode(
+                        "Going to break of Spliter",
+                        istk,
+                        Page_Number,
+                        To_Split,
+                        sort,
+                        arg,
+                    )
 
                 return Save(
                     Page_To_Save,
@@ -1680,19 +1797,24 @@ def Split_Or_Not(sort, arg):
                     WWW_PATH,
                 )
             else:
-                istk=inspect.stack();DebugMode(
-                    "Going to break of Split_Or_Not",
-                    istk,
-                    Page_Number,
-                    To_Split,
-                    sort,
-                    arg,
-                )
+                if DoDbg(F) is True:
+                    istk = inspect.stack()
+                    DebugMode(
+                        "Going to break of Spliter",
+                        istk,
+                        Page_Number,
+                        To_Split,
+                        sort,
+                        arg,
+                    )
                 return Save(Page_To_Save, str(Title) + ".html", WWW_PATH)
 
 
 def Save(data, title, path):
-    istk=inspect.stack();DebugMode("save", istk, data)
+    F = "Save"
+    if DoDbg(F) is True:
+        istk = inspect.stack()
+        DebugMode("save", istk, data)
 
     finalpath = str(path) + str(title)
 
@@ -1701,7 +1823,7 @@ def Save(data, title, path):
 
 
 def Update():
-    global ServerReady
+    F = "Update"
     global GardenCam
     global GarageCam
     global LivingCam
@@ -1726,7 +1848,7 @@ def Update():
             try:
                 if usr.lower() != USER.lower():
                     HOST_DICT[hst + "_Temp"] = (
-                        str(ssh(usr, hst.lower(), "sensors"))
+                        str(Ssh(usr, hst.lower(), "sensors"))
                         .split("temp1:        +")[1]
                         .split("°C")[0]
                         .split(".")[0]
@@ -1742,13 +1864,15 @@ def Update():
                     )
 
             except Exception as e:
-                istk=inspect.stack();DebugMode(str(e), istk, "temp")
+                if DoDbg(F) is True:
+                    istk = inspect.stack()
+                    DebugMode(str(e), istk, "temp")
                 HOST_DICT[hst + "_Temp"] = "???"
 
             try:
                 if usr.lower() != USER.lower():
                     HOST_DICT[hst + "_Space"] = (
-                        str(ssh(usr, hst.lower(), "df -h /")).split("%")[1][-3:] + "%"
+                        str(Ssh(usr, hst.lower(), "df -h .")).split("%")[1][-3:] + "%"
                     )
                 else:
                     HOST_DICT[hst + "_Space"] = (
@@ -1758,13 +1882,15 @@ def Update():
                         + "%"
                     )
             except Exception as e:
-                istk=inspect.stack();DebugMode(str(e), istk, "df")
+                if DoDbg(F) is True:
+                    istk = inspect.stack()
+                    DebugMode(str(e), istk, "df")
                 HOST_DICT[hst + "_Space"] = "???"
 
     if Timer("Cam", 3600) is True:
 
         try:
-            CamCounter = str(ssh(CAM_USER_HOST[0], CAM_USER_HOST[1], CAM_CMD))
+            CamCounter = str(Ssh(CAM_USER_HOST[0], CAM_USER_HOST[1], CAM_CMD))
             CamCounter = CamCounter.splitlines()
 
             for lines in CamCounter:
@@ -1777,7 +1903,9 @@ def Update():
                 if "LivingCam" in lines:
                     LivingCam = lines.split("LivingCam :")[1].split(" ")[0]
         except Exception as e:
-            istk=inspect.stack();DebugMode(str(e), istk, CamCounter)
+            if DoDbg(F) is True:
+                istk = inspect.stack()
+                DebugMode(str(e), istk, CamCounter)
 
         if GarageCam is "":
             GarageCam = "???"
@@ -1788,135 +1916,151 @@ def Update():
 
     if Timer("Chart", 900001):
         OsseChart = ChartScriptHead
-        OsseChart += OsseChartBuilder()
+        OsseChart += ChartBuilder()
         OsseChart += ChartScriptTail
         Save(OsseChart, "ossechart.js", WWW_JS_PATH)
 
-    Split_Or_Not("no_sort", "index")
+    Spliter("no_sort", "index")
 
     for hst in HOSTS_NAMES:
 
-        Split_Or_Not("by_name", hst.lower())
+        Spliter("by_name", hst.lower())
 
     for rule in Global_Rule_List:
-        Split_Or_Not("by_rule", str(rule))
+        Spliter("by_rule", str(rule))
 
     for lvl in Global_Lvl_List:
-        Split_Or_Not("by_lvl", str(lvl))
-
-    if ServerReady is True:
-        Thread(cherrypy.quickstart(Osserver(), "/", Cherryconf)).start()
-        print(
-            "\nDone Loading Datas\nYou Can Now Connect To http://%s .\n"
-            % (socket.gethostbyname(socket.gethostname()))
-        )
-        ServerReady = False
+        Spliter("by_lvl", str(lvl))
 
 
-# class Osserver:
 def Osserver():
-    pass
+    F = "Osserver"
+    try:
+
+        @cherrypy.expose
+        def reload():
+            Launcher()
+            raise cherrypy.HTTPRedirect("index.html")
+
+    except Exception as e:
+        if DoDbg(F) is True:
+            istk = inspect.stack()
+            DebugMode(str(e), istk)
 
 
 def Timer(mode, limit):
     global Time_Track
 
-    istk=inspect.stack();DebugMode("Timer", istk, mode, Time_Track)
+    F = "Timer"
+
+    if DoDbg(F) is True:
+        istk = inspect.stack()
+        DebugMode("Timer", istk, mode, Time_Track)
 
     Now = datetime.now()
 
     if Time_Track[mode][0] is None:
         Time_Track[mode] = [limit + 1, Now]
-        istk=inspect.stack();DebugMode(
-            "if Time_Track[mode][0] is None:", istk, mode, Time_Track
-        )
+        if DoDbg(F) is True:
+            istk = inspect.stack()
+            DebugMode("if Time_Track[mode][0] is None:", istk, mode, Time_Track)
     else:
         Time_Track[mode][0] = round((Now - Time_Track[mode][0]).total_seconds())
-        istk=inspect.stack();DebugMode(
-            "else Time_Track[mode][0] is None:", istk, mode, Time_Track
-        )
+        if DoDbg(F) is True:
+            istk = inspect.stack()
+            DebugMode("else Time_Track[mode][0] is None:", istk, mode, Time_Track)
 
     if Time_Track[mode][0] > limit:
         Time_Track[mode][1] = Now
-        istk=inspect.stack();DebugMode(
-            "if Time_Track[mode][0] > limit:", istk, mode, Time_Track
-        )
+        if DoDbg(F) is True:
+            istk = inspect.stack()
+            DebugMode("if Time_Track[mode][0] > limit:", istk, mode, Time_Track)
         return True
     else:
         return False
 
 
-def Check_Mail():
-    pass
-
-
 ##################################################################################
 
 
-def main():
+def Parse_Mail(Mails):
+    F = "Parse_Mail"
+    Parsed = []
 
-    Done = False
-    with open(MAIL_PATH, "rb") as mailbox:
-        Mails = Mbr(mailbox)
+    for M in Mails:
+        Mailstr = Parser(policy=default).parsestr(M.as_string())
+        Body = Mailstr.get_payload()
+        From = Mailstr["from"]
+        To = Mailstr["to"]
+        Subject = Mailstr["subject"]
 
-        for M in Mails:
-            if Done is False:
-                Mailstr = Parser(policy=default).parsestr(M.as_string())
-                Body = Mailstr.get_payload()
-                From = Mailstr["from"]
-                To = Mailstr["to"]
-                Subject = Mailstr["subject"]
-                if From is not None:
-                    Stockvars(From, To, Subject, Body)
-
-                    if FirstLoad is False:
-                        Update()
-
-                    istk=inspect.stack();DebugMode(
-                        "if From is not None:",
-                        istk,
-                        Sep,
-                        From,
-                        To,
-                        Subject,
-                        Body,
-                        Sep,
-                    )
+        if From is None:
+            if (TMP_FIX[0] and TMP_FIX[1]) in str(Mailstr):
+                if (Subject and Body) is not None:
+                    From = TMP_FIX[2]
+                    To = TMP_FIX[3]
+                    if DoDbg(F) is True:
+                        istk = inspect.stack()
+                        DebugMode(
+                            "if TMP_FIX[0] and TMP_FIX[1] in str(Mailstr):",
+                            istk,
+                            SepTop,
+                            From,
+                            To,
+                            Subject,
+                            Sepmid,
+                            Body,
+                            Sepend,
+                        )
+                    Parsed.append((From, To, Subject, Body))
                 else:
-                    istk=inspect.stack();DebugMode(
-                        "else From is not None:",
-                        istk,
-                        Sep,
-                        M,
-                        Mailstr,
-                        SepTop,
-                        From,
-                        To,
-                        Subject,
-                        Sepmid,
-                        Body,
-                        Sepend,
-                    )
-                    if TMP_FIX[0] in str(Mailstr):
-                        if TMP_FIX[1] in str(Mailstr):
-                            if Subject is not None and Body is not None:
-                                From = TMP_FIX[2]
-                                To = TMP_FIX[3]
-                                istk=inspect.stack();DebugMode(
-                                    "if TMP_FIX[0] in str(Mailstr):",
-                                    istk,
-                                    SepTop,
-                                    From,
-                                    To,
-                                    Subject,
-                                    Sepmid,
-                                    Body,
-                                    Sepend,
-                                )
-                                Stockvars(From, To, Subject, Body)
-                                if FirstLoad is False:
-                                    Update()
-#    print("The End")
+                    if DoDbg(F) is True:
+                        istk = inspect.stack()
+                        DebugMode(
+                            "if TMP_FIX[0] and TMP_FIX[1] in Mailstr but Subject or Body are None",
+                            istk,
+                            SepTop,
+                            From,
+                            To,
+                            Subject,
+                            Sepmid,
+                            Body,
+                            Sepend,
+                        )
+        else:
+
+            Parsed.append((From, To, Subject, Body))
+            if DoDbg(F) is True:
+                istk = inspect.stack()
+                DebugMode(
+                    "if From is not None:",
+                    istk,
+                    Sep,
+                    From,
+                    To,
+                    Subject,
+                    Body,
+                    Sep,
+                )
+
+    return Parsed
+
+
+def Launcher():
+    Mails_Lst = Get_Mails(MAIL_PATH)
+    Parsed_Lst = Parse_Mail(Mails_Lst)
+    Stockvars(Parsed_Lst)
+    Update()
+
+def main():
+    global ServerReady
+    Launcher()
+    ServerReady = False
+    Thread(cherrypy.quickstart(Osserver(), "/", Cherryconf)).start()
+    print(
+        "\nDone Loading Datas\nYou Can Now Connect To http://%s .\n"
+        % (socket.gethostbyname(socket.gethostname()))
+    )
 
 
 if __name__ == "__main__":
@@ -1930,7 +2074,12 @@ if __name__ == "__main__":
     print(Osserver_Title + "\n")
     print("Starting Server Please wait...\n")
 
-    Thread(target=Loading).start()
+    try:
+       Thread(target=Loading).start()
+    except exception as e:
+        istk = inspect.stack()
+        DebugMode(str(e), istk)
+
     os.chdir(SCRIPT_PATH)
 
     HOST_DICT = {}
