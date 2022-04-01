@@ -2061,7 +2061,7 @@ def Launcher():
 def main():
     global ServerReady
     Launcher()
-    ServerReady = False
+    ServerReady = True
     Thread(cherrypy.quickstart(Osserver(), "/", Cherryconf)).start()
     print(
         "\nDone Loading Datas\nYou Can Now Connect To http://%s .\n"
