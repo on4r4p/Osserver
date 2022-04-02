@@ -152,13 +152,10 @@ def Loading():
 
 def Get_Mails(file):
     global Mails_Archive
-
     F = "Get_Mails"
-    Lock = False
     Lines = []
-
     try:
-        with open(file, "rb") as m:
+        with open(file, "r") as m:
             mailbox = m.readlines()
     except Exception as e:
         istk = inspect.stack()
@@ -166,115 +163,23 @@ def Get_Mails(file):
             str(e),
             istk,
             file,
-            Lock,
         )
         mailbox = []
 
     for line in mailbox:
+
         try:
-            if line == b"" or line.startswith(b"From "):
-                if DoDbg(F) is True:
-                    istk = inspect.stack()
-                    DebugMode("inside conditional", istk)
-
-                if line == b"":
-                    if len(Lines) > 1:
-                        for l in Lines:
-                            if l.startswith(b"From "):
-                                if DoDbg(F) is True:
-                                    istk = inspect.stack()
-                                    DebugMode(
-                                        "Line is empty but full mail obj found in Lines[] so going to yield",
-                                        istk,
-                                        len(Lines),
-                                    )
-
-                                if (
-                                    email.message_from_bytes(
-                                        b"".join(Lines), policy=default
-                                    )
-                                    not in Mails_Archive
-                                ):
-                                    Mails_Archive.append(
-                                        email.message_from_bytes(
-                                            b"".join(Lines), policy=default
-                                        )
-                                    )
-                                else:
-                                    if DoDbg(F) is True:
-                                        istk = inspect.stack()
-                                        DebugMode("Email already in archive", istk)
-                                if DoDbg(F) is True:
-                                    istk = inspect.stack()
-                                    DebugMode("Setting Lines[] to empty", istk)
-                                Lines = []
-                                # break
-                    else:
-                        Lines = []
-                        if DoDbg(F) is True:
-                            istk = inspect.stack()
-                            DebugMode("len(Lines[]) < 0 ,Lines[] now empty", istk)
-
-                elif line.startswith(b"From "):
-                    if DoDbg(F) is True:
-                        istk = inspect.stack()
-                        DebugMode(
-                            "Inside conditional from/befor append to archive",
-                            istk,
-                            len(Lines),
-                        )
-                    if len(Lines) > 1:
-                        Mails_Archive.append(
-                            email.message_from_bytes(b"".join(Lines), policy=default)
-                        )
-
-                elif b"From " in line:
-                    Lines = []
-                    Lines.append(line)
-                    Lock = True
-                    if DoDbg(F) is True:
-                        istk = inspect.stack()
-                        DebugMode(
-                            "Lines[] is now empty Append line in Lines[]",
-                            istk,
-                            Lock,
-                        )
-                else:
-                    if DoDbg(F) is True:
-                        istk = inspect.stack()
-                        DebugMode("No From in line so Lines[] is now empty", istk)
-                    line = []
-
-            if Lock is False:
-
-                if len(line) > 1 or line is b"\n":
-                    if DoDbg(F) is True:
-                        istk = inspect.stack()
-                        DebugMode("Line goes to Lines[]", istk, line is b"\n")
-                    Done = False
-                    Lines.append(line)
-                else:
-                    if DoDbg(F) is True:
-                        istk = inspect.stack()
-                        DebugMode(
-                            "line is not long enough to append to Lines[]",
-                            istk,
-                            line,
-                        )
+            if line.startswith("From "):
+                 Mails_Archive.append("".join(Lines))
+                 Lines = []
+                 Lines.append(line)
             else:
-                if DoDbg(F) is True:
-                    istk = inspect.stack()
-                    DebugMode(
-                        "Lock prevent appending line in Lines[] now Lock is back to false",
-                        istk,
-                    )
-                Lock = False
+                Lines.append(line)
 
         except Exception as e:
             if DoDbg(F) is True:
                 istk = inspect.stack()
                 DebugMode(str(e), istk)
-
     return Mails_Archive
 
 
@@ -1104,8 +1009,10 @@ def BuildHtml(sort=None, arg=None):
     DailyCounter_Syscheck = 0
     DailyCounter_Firewall = 0
 
+    failcnt = 0
+
     day = datetime.today()
-    yesterday = datetime.today() - timedelta(days=1)
+    yesterday = day - timedelta(days=1)
 
     lastfile = (
         str(statpath)
@@ -1126,10 +1033,8 @@ def BuildHtml(sort=None, arg=None):
         + ".log"
     )
 
-    if os.path.exists(lastfile):
-        pass
-    else:
-
+    while os.path.exists(lastfile) is False:
+        failcnt += 1
         day = day - timedelta(days=1)
         copylastfile = lastfile
         lastfile = (
@@ -1142,15 +1047,16 @@ def BuildHtml(sort=None, arg=None):
             + ".log"
         )
         if os.path.exists(lastfile):
-            pass
-        else:
-            print("Lastfile File not found ", lastfile)
+            break
+        if failcnt > 31:
+            print("Can't find any stats for this month(lastfile)")
             if DoDbg(F) is True:
                         istk = inspect.stack()
-                        DebugMode("Lastfile File not found", istk,copylastfile,lastfile,Yesterday_lastfile)
-    if os.path.exists(Yesterday_lastfile):
-        pass
-    else:
+                        DebugMode("Can't find any stats for this month(lastfile)", istk,failcnt,lastfile,Yesterday_lastfile)
+            break
+    failcnt = 0
+    while os.path.exists(Yesterday_lastfile):
+        failcnt += 1
         yesterday = yesterday - timedelta(days=1)
         copyYesterday_lastfile=Yesterday_lastfile
         Yesterday_lastfile = (
@@ -1163,106 +1069,103 @@ def BuildHtml(sort=None, arg=None):
             + ".log"
         )
         if os.path.exists(Yesterday_lastfile):
-            pass
-        else:
-            print("Yesterday File not found ", Yesterday_lastfile)
+            break
+        if failcnt > 31:
+            print("Can't find any stats for this month(Yesterday_lastfile)", Yesterday_lastfile)
             if DoDbg(F) is True:
                         istk = inspect.stack()
-                        DebugMode("Lastfile File not found", istk,Yesterday_lastfile, lastfile,Yesterday_lastfile)
+                        DebugMode("Can't find any stats for this month(Yesterday_lastfile)", istk,Yesterday_lastfile, lastfile,Yesterday_lastfile)
+    if os.path.exists(lastfile):
 
-    with open(lastfile) as f:
-        for line in f:
-            line = line.strip()
+        with open(lastfile) as f:
+            for line in f:
+                line = line.strip()
 
-            if (
-                len(line) > 0
-                and not "Hour totals" in line
-                and not "Total events" in line
-            ):
+                if (
+                    len(line) > 0
+                    and not "Hour totals" in line
+                    and not "Total events" in line
+                ):
 
-                if "--" in line:
-                    Hourstat.append(line)
-                    DailyCounter_Alert = DailyCounter_Alert + int(line.split("--")[1])
-                    DailyCounter_Event = DailyCounter_Event + int(line.split("--")[2])
-                    DailyCounter_Syscheck = DailyCounter_Syscheck + int(
-                        line.split("--")[3]
-                    )
-                    DailyCounter_Firewall = DailyCounter_Firewall + int(
-                        line.split("--")[4]
-                    )
+                    if "--" in line:
+                        Hourstat.append(line)
+                        DailyCounter_Alert = DailyCounter_Alert + int(line.split("--")[1])
+                        DailyCounter_Event = DailyCounter_Event + int(line.split("--")[2])
+                        DailyCounter_Syscheck = DailyCounter_Syscheck + int(
+                            line.split("--")[3]
+                        )
+                        DailyCounter_Firewall = DailyCounter_Firewall + int(
+                            line.split("--")[4]
+                        )
 
-                elif "-0-" in line:
-                    LevelZero.append(line)
-                    LevelZero_Counter = LevelZero_Counter + int(line.split("-")[3])
+                    elif "-0-" in line:
+                        LevelZero.append(line)
+                        LevelZero_Counter = LevelZero_Counter + int(line.split("-")[3])
 
-                    if line.split("-")[1] in LevelZero_Id:
-                        LevelZero_Id[line.split("-")[1]] = int(
-                            LevelZero_Id.get(line.split("-")[1])
-                        ) + int(line.split("-")[3])
-                    else:
-                        LevelZero_Id[line.split("-")[1]] = line.split("-")[3]
+                        if line.split("-")[1] in LevelZero_Id:
+                            LevelZero_Id[line.split("-")[1]] = int(
+                                LevelZero_Id.get(line.split("-")[1])
+                            ) + int(line.split("-")[3])
+                        else:
+                            LevelZero_Id[line.split("-")[1]] = line.split("-")[3]
 
-                elif int(line.split("-")[2]) > MaxLvlAlert:
-                    MaxLvlAlert = int(line.split("-")[2])
+                    elif int(line.split("-")[2]) > MaxLvlAlert:
+                        MaxLvlAlert = int(line.split("-")[2])
 
-                if not "--" in line and not "-0-" in line:
+                    if not "--" in line and not "-0-" in line:
+                        if line.split("-")[1] in RuleId_Counter:
+                            RuleId_Counter[line.split("-")[1]] = int(
+                                RuleId_Counter.get(line.split("-")[1])
+                            ) + int(line.split("-")[3])
+                        else:
+                            RuleId_Counter[line.split("-")[1]] = line.split("-")[3]
 
-                    if line.split("-")[1] in RuleId_Counter:
-                        RuleId_Counter[line.split("-")[1]] = int(
-                            RuleId_Counter.get(line.split("-")[1])
-                        ) + int(line.split("-")[3])
-                    else:
-                        RuleId_Counter[line.split("-")[1]] = line.split("-")[3]
+                        if line.split("-")[1] in RuleId_Lvl:
+                            pass
+                        else:
+                            RuleId_Lvl[line.split("-")[1]] = line.split("-")[2]
 
-                    if line.split("-")[1] in RuleId_Lvl:
+    if os.path.exists(Yesterday_lastfile):
+        with open(Yesterday_lastfile) as f:
+            for line in f:
+                line = line.strip()
+
+                if (
+                    len(line) > 0
+                    and not "Hour totals" in line
+                    and not "Total events" in line
+                ):
+
+                    if "--" in line:
                         pass
-                    else:
-                        RuleId_Lvl[line.split("-")[1]] = line.split("-")[2]
+                    elif "-0-" in line:
+                        Yesterday_LevelZero.append(line)
+                        Yesterday_LevelZero_Counter = Yesterday_LevelZero_Counter + int(
+                            line.split("-")[3]
+                        )
 
-    with open(Yesterday_lastfile) as f:
-        for line in f:
-            line = line.strip()
-            #              print(line)
+                        if line.split("-")[1] in Yesterday_LevelZero_Id:
+                            Yesterday_LevelZero_Id[line.split("-")[1]] = int(
+                                Yesterday_LevelZero_Id.get(line.split("-")[1])
+                            ) + int(line.split("-")[3])
+                        else:
+                            Yesterday_LevelZero_Id[line.split("-")[1]] = line.split("-")[3]
 
-            if (
-                len(line) > 0
-                and not "Hour totals" in line
-                and not "Total events" in line
-            ):
+                    elif int(line.split("-")[2]) > Yesterday_MaxLvlAlert:
+                        Yesterday_MaxLvlAlert = int(line.split("-")[2])
+                    if not "--" in line and not "-0-" in line:
 
-                if "--" in line:
-                    pass
-                elif "-0-" in line:
-                    Yesterday_LevelZero.append(line)
-                    Yesterday_LevelZero_Counter = Yesterday_LevelZero_Counter + int(
-                        line.split("-")[3]
-                    )
+                        if line.split("-")[1] in Yesterday_RuleId_Counter:
+                            Yesterday_RuleId_Counter[line.split("-")[1]] = int(
+                                Yesterday_RuleId_Counter.get(line.split("-")[1])
+                            ) + int(line.split("-")[3])
+                        else:
+                            Yesterday_RuleId_Counter[line.split("-")[1]] = line.split("-")[3]
 
-                    if line.split("-")[1] in Yesterday_LevelZero_Id:
-                        Yesterday_LevelZero_Id[line.split("-")[1]] = int(
-                            Yesterday_LevelZero_Id.get(line.split("-")[1])
-                        ) + int(line.split("-")[3])
-                    else:
-                        Yesterday_LevelZero_Id[line.split("-")[1]] = line.split("-")[3]
-
-                elif int(line.split("-")[2]) > Yesterday_MaxLvlAlert:
-                    Yesterday_MaxLvlAlert = int(line.split("-")[2])
-
-                if not "--" in line and not "-0-" in line:
-
-                    if line.split("-")[1] in Yesterday_RuleId_Counter:
-                        Yesterday_RuleId_Counter[line.split("-")[1]] = int(
-                            Yesterday_RuleId_Counter.get(line.split("-")[1])
-                        ) + int(line.split("-")[3])
-                    else:
-                        Yesterday_RuleId_Counter[line.split("-")[1]] = line.split("-")[
-                            3
-                        ]
-
-                    if line.split("-")[1] in Yesterday_RuleId_Lvl:
-                        pass
-                    else:
-                        Yesterday_RuleId_Lvl[line.split("-")[1]] = line.split("-")[2]
+                        if line.split("-")[1] in Yesterday_RuleId_Lvl:
+                            pass
+                        else:
+                            Yesterday_RuleId_Lvl[line.split("-")[1]] = line.split("-")[2]
 
     for rule, cnt in RuleId_Counter.items():
         if not rule in Global_Rule_List:
@@ -1818,15 +1721,14 @@ def Spliter(sort, arg):
 
 def Save(data, title, path):
     F = "Save"
-    if DoDbg(F) is True:
-        istk = inspect.stack()
-        DebugMode("save", istk, data)
-
-    finalpath = str(path) + str(title)
-
-    with open(str(finalpath), "w") as f:
-        f.write(str(data))
-
+    try:
+       finalpath = str(path) + str(title)
+       with open(str(finalpath), "w") as f:
+           f.write(str(data))
+    except Exception as e:
+        if DoDbg(F) is True:
+           istk = inspect.stack()
+           DebugMode(str(e), istk) 
 
 def Update():
     F = "Update"
@@ -1940,12 +1842,20 @@ def Update():
 
 
 def Osserver():
+    global ServerReady
+
     F = "Osserver"
     try:
 
         @cherrypy.expose
         def reload():
+            ServerReady = False
+            Loading()
             Launcher()
+            while True:
+                time.sleep(1)
+                if ServerReady is True:
+                   break
             raise cherrypy.HTTPRedirect("index.html")
 
     except Exception as e:
@@ -1992,13 +1902,13 @@ def Timer(mode, limit):
 def Parse_Mail(Mails):
     F = "Parse_Mail"
     Parsed = []
-
     for M in Mails:
-        Mailstr = Parser(policy=default).parsestr(M.as_string())
+        Mailstr = Parser(policy=default).parsestr(M)
         Body = Mailstr.get_payload()
         From = Mailstr["from"]
         To = Mailstr["to"]
         Subject = Mailstr["subject"]
+
 
         if From is None:
             if (TMP_FIX[0] and TMP_FIX[1]) in str(Mailstr):
@@ -2010,7 +1920,7 @@ def Parse_Mail(Mails):
                         DebugMode(
                             "if TMP_FIX[0] and TMP_FIX[1] in str(Mailstr):",
                             istk,
-                            SepTop,
+                            Septop,
                             From,
                             To,
                             Subject,
@@ -2025,7 +1935,7 @@ def Parse_Mail(Mails):
                         DebugMode(
                             "if TMP_FIX[0] and TMP_FIX[1] in Mailstr but Subject or Body are None",
                             istk,
-                            SepTop,
+                            Septop,
                             From,
                             To,
                             Subject,
@@ -2053,21 +1963,22 @@ def Parse_Mail(Mails):
 
 
 def Launcher():
+    global ServerReady
+
     Mails_Lst = Get_Mails(MAIL_PATH)
     Parsed_Lst = Parse_Mail(Mails_Lst)
     Stockvars(Parsed_Lst)
     Update()
 
-def main():
-    global ServerReady
-    Launcher()
     ServerReady = True
-    Thread(cherrypy.quickstart(Osserver(), "/", Cherryconf)).start()
+
+def main():
+    Launcher()
     print(
         "\nDone Loading Datas\nYou Can Now Connect To http://%s .\n"
         % (socket.gethostbyname(socket.gethostname()))
     )
-
+    Thread(cherrypy.quickstart(Osserver(), "/", Cherryconf)).start()
 
 if __name__ == "__main__":
 
