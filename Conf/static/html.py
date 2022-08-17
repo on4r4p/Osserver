@@ -31,25 +31,60 @@ Template_Head="""<!DOCTYPE html>
     <script type="text/javascript" src="js/gauge.js"></script>
     <style type="text/css">
 
-    .sender {
-      margin-bottom: 0px !important;
-   }
+.sender {
+  margin-bottom: 0px !important;
+}
 
-    .read {
-      height: 48px !important;
-     }
+.read {
 
-    .disk {
-      top: 15px !important;
-    text-shadow: 0px 1px 1px silver;
-     }
+  height: 65px !important;
+}
 
-    .alerts {
-      margin-left: 90px !important;
+.disk {
+  top: 22px !important;
+  padding-top: 10px !important;
+text-shadow: 0px 1px 1px silver;
+}
+
+.alerts {
+  margin-left: 90px !important;
   width: 10px;
-   text-shadow: 0pt 1px 1px silver;
-   }
+  line-height:0px;
+  text-shadow: 0pt 1px 1px silver;
 
+}
+      
+p.alerts
+{
+  line-height:1px;
+}
+
+p.disk {
+  color: #b2c831;
+  text-decoration: underline; 
+  
+}
+
+p.sender {
+  color: #b2c831;
+  text-decoration: underline; 
+  
+}
+li#normal{
+  border-radius:5px 30px 30px 5px;
+    text-decoration: underline;
+    border-right: 3px solid green;
+}
+li#warning{
+  border-radius:5px 30px 30px 5px;
+    text-decoration: underline;
+    border-right: 3px solid orange;
+}
+li#offline{
+  border-radius:5px 30px 30px 5px;
+    text-decoration: underline;
+    border-right: 3px solid red;
+}
     .h1 {
       font-size: 18px !important;
       font-weight: bold !important;
@@ -96,6 +131,19 @@ h5 {
 }
 
 
+
+.dash-profile {
+  margin-bottom: 20px;
+  padding-bottom: 0px;
+  border: 1px solid #383737;
+  background-image: url("images/sep-half.png");
+  background-color: #4f4f4f;
+  color: white;
+  min-height:fit-content;
+  height: auto;
+text-shadow: 0px 1px 1px #cccccc;
+}
+
 .dash-unit {
   margin-bottom: 0%;
   padding-bottom: 0px;
@@ -103,7 +151,7 @@ h5 {
   background-image: url("images/sep-half.png");
   background-color: #4f4f4f;
   color: white;
-  height: 290px;
+  height: auto;
 text-shadow: 0px 1px 1px #cccccc;
 }
 
@@ -348,6 +396,10 @@ textarea {
 }
 
 .info-user {
+  position: sticky;
+  top: 210px;
+  padding-top: 100px;
+  margin-bottom: 10px;
   text-align: center;
   font-size: 24px;
   color: #b2c831;
@@ -410,7 +462,7 @@ digiclock {
   background-color: #5d5b5b;
 }
 
-.framemail .window .mail li::after, .framemail .window .mail li::before {
+.framemail .window .mail li * ::after, .framemail .window .mail li * ::before {
   border-left: 8px solid transparent;
   border-top: 8px solid #ddff66;
   content: "";
@@ -421,14 +473,6 @@ digiclock {
   width: 0px;
 }
 
-.framemail .window .mail li::before {
-  border-top-color: #bbbbbb;
-  border-width: 9px;
-}
-
-.framemail .window .mail li:nth-child(2)::after {
-  border-top-color: #fa1d2d;
-}
 
 .framemail .window .mail li i {
   display: inline-block;
@@ -839,7 +883,7 @@ a:hover {
         <div class="navbar-header"> <button type="button" class="navbar-toggle"
             data-toggle="collapse" data-target=".navbar-collapse"> <span class="icon-bar"></span>
             <span class="icon-bar"></span> <span class="icon-bar"></span> </button>
-          <a class="navbar-brand" href="index.html"><img src="images/ossec_logo30.png"
+          <a class="navbar-brand" href="reload"><img src="images/ossec_logo30.png"
               alt=""> Ossec Dashboard</a> </div>
       </div>
     </div>
@@ -848,18 +892,19 @@ Template_Row1="""      <!-- FIRST ROW OF BLOCKS -->
       <div class="row">"""
 Template_Profile="""        <!-- USER PROFILE BLOCK -->
         <div class="col-sm-3 col-lg-3">
-          <div class="dash-unit"> <dtitle>Teamrocket.org</dtitle>
+          <div class="dash-profile"> <dtitle>Teamrocket.org</dtitle>
             <hr style="margin: 0px;">
             <div class="thumbnail"> <canvas id="canvas" width="300" height="300">
               </canvas> </div>
             <!-- /thumbnail -->
             <h1 style="margin-bottom: 0px; margin-top: 0px; padding-top: 0%; padding-left: 0px;"class="h1">PONYS'S SECRET HQ!</h1>
-            <h3>Summary</h3>
             <br>
             <br>
-            <div class="info-user" style="position: relative; top: 120px;">"""
+            <div class="info-user">"""
+#            <div class="info-user" style="position: sticky; top: 210px; padding-top: 100px;margin-bottom: 10px;">"""
 
-for himg,hping,hname in zip(HOSTS_IMGS,HOSTS_IPS,HOSTS_NAMES):
+for n,(himg,hping,hname) in enumerate(zip(HOSTS_IMGS,HOSTS_IPS,HOSTS_NAMES)):
+
 
   if ping_server(hping) is True:
          online = "%s is Online"%hname
@@ -874,6 +919,10 @@ for himg,hping,hname in zip(HOSTS_IMGS,HOSTS_IPS,HOSTS_NAMES):
       Template_Profile += """
             <a href="%s.html"> <img
                 class="avatar" src="images/%s" alt="%s"></a>""" %(hname,himg,online)
+  if n % 2 == 0 and n != 0:
+      Template_Profile += """<br>
+"""
+
 Template_Profile +="""
           </div>
          </div>

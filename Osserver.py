@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
-import email, sys, time, re, os, subprocess, socket, inspect, cherrypy
+import email, sys, time, re, os, subprocess, socket, inspect, cherrypy, hashlib
 import dateutil.parser as dparser
 from threading import Thread
 from datetime import datetime, timedelta
 from pathlib import Path
 from email.policy import default
 from email.parser import BytesParser, Parser
+from tinydb import TinyDB, Query
 from Conf.static.html import *
 from Conf.static.gauge import *
 from Conf.static.ossechart import *
@@ -35,19 +36,30 @@ CharPos = 1
 loading_txt = ""
 GoBack = False
 MAXCHAR = int(tput.communicate()[0].strip()) - 1
-
+DEBUG = [i.lower() for i in DEBUG]
 
 def Logging(Err_to_log,call_function, CurrentDate):
     Err_to_log = "\n------\n".join(Err_to_log)
     File_to_save = "%s%s.log"%(LOG_PATH,call_function)
+    All_to_save = "%sAll.log"%(LOG_PATH)
     Safelog = "%sError.Safe.Log"%LOG_PATH
     if os.path.isfile(File_to_save) is False:
+        print("%s not found creating a new one."%File_to_save)
         open(File_to_save, "w")
+
+    if "all" in DEBUG and os.path.isfile(All_to_save) is False:
+        open(All_to_save, "w")
+
     try:
         with open(File_to_save, "a") as fuck:
             fuck.write("\n==========================\n" + str(CurrentDate))
             fuck.write("\n" + Err_to_log)
             fuck.write("\n==========================\n")
+        if "all" in DEBUG:
+            with open(All_to_save, "a") as fuck:
+                fuck.write("\n==========================\n" + str(CurrentDate))
+                fuck.write("\n" + Err_to_log)
+                fuck.write("\n==========================\n")
     except Exception as e:
         if os.path.isfile(Safelog) is False:
             open(Safelog, "w")
@@ -150,6 +162,480 @@ def Loading():
                 GoBack = False
 
 
+
+def Find_Ossec_Stats():    
+    F = "Find_Ossec_Stats"
+    day = datetime.today()
+    Stats_Timestamp = day.strftime("%Y-%m-%d-%H")
+    Daily_Timestamp = day.strftime("%Y-%m-%d")
+    today_lastfile_date = day
+    yesterday = day - timedelta(days=1)
+    Yesterday_Timestamp = yesterday.strftime("%Y-%m-%d")
+
+    lastfile = (
+        str(OSSEC_STATS_PATH)
+        + str(day.year)
+        + "/"
+        + str(day.strftime("%b"))
+        + "/ossec-totals-"
+        + str(day.strftime("%d"))
+        + ".log"
+    )
+    Yesterday_lastfile = (
+        str(OSSEC_STATS_PATH)
+        + str(yesterday.year)
+        + "/"
+        + str(yesterday.strftime("%b"))
+        + "/ossec-totals-"
+        + str(yesterday.strftime("%d"))
+        + ".log"
+    )
+
+    while os.path.exists(lastfile) is False:
+        failcnt += 1
+        day = day - timedelta(days=failcnt)
+        today_lastfile_date = day
+        copylastfile = lastfile
+        lastfile = (
+            str(OSSEC_STATS_PATH)
+            + str(day.year)
+            + "/"
+            + str(day.strftime("%b"))
+            + "/ossec-totals-"
+            + str(day.strftime("%d"))
+            + ".log"
+        )
+        if os.path.exists(lastfile):
+            break
+        if failcnt > 31:
+            if DoDbg(F) is True:
+                        istk = inspect.stack()
+                        DebugMode("Can't find any stats for this month(lastfile)", istk,failcnt,lastfile,Yesterday_lastfile)
+            break
+    failcnt = 0
+    while os.path.exists(Yesterday_lastfile):
+        failcnt += 1
+        yesterday = yesterday - timedelta(days=failcnt)
+        today_lastfile_date  = yesterday
+        copyYesterday_lastfile=Yesterday_lastfile
+        Yesterday_lastfile = (
+            str(OSSEC_STATS_PATH)
+            + str(yesterday.year)
+            + "/"
+            + str(yesterday.strftime("%b"))
+            + "/ossec-totals-"
+            + str(yesterday.strftime("%d"))
+            + ".log"
+        )
+        if os.path.exists(Yesterday_lastfile):
+            break
+        if failcnt > 31:
+            if DoDbg(F) is True:
+                        istk = inspect.stack()
+                        DebugMode("Can't find any stats for this month(Yesterday_lastfile)", istk,Yesterday_lastfile, lastfile,Yesterday_lastfile)
+            break
+    return(Get_Ossec_Data(today_lastfile_date,Yesterday_Timestamp,Stats_Timestamp,Daily_Timestamp,lastfile,Yesterday_lastfile))
+
+
+
+def Get_Ossec_Data(today_lastfile_date,Yesterday_Timestamp,Stats_Timestamp,Daily_Timestamp,lastfile,Yesterday_lastfile):
+    global Global_Lvl_List
+    global Global_Rule_List
+
+    F = "Get_Ossec_Data"
+
+
+    MaxLvlAlert = 0
+    LevelZero = []
+    LevelZero_Id = {}
+    RuleId_Counter = {}
+    RuleId_Lvl = {}
+    LevelZero_Counter = 0
+
+    Yesterday_MaxLvlAlert = 0
+    Yesterday_LevelZero = []
+    Yesterday_LevelZero_Id = {}
+    Yesterday_RuleId_Counter = {}
+    Yesterday_RuleId_Lvl = {}
+    Yesterday_LevelZero_Counter = 0
+
+    Hourstat = []
+    DailyCounter_Alert = 0
+    DailyCounter_Event = 0
+    DailyCounter_Syscheck = 0
+    DailyCounter_Firewall = 0
+
+    failcnt = 0
+
+    if os.path.exists(lastfile):
+
+        with open(lastfile) as f:
+            for line in f:
+                line = line.strip()
+
+                if (
+                    len(line) > 0
+                    and not "Hour totals" in line
+                    and not "Total events" in line
+                ):
+
+                    if "--" in line:
+                        Hourstat.append(line)
+                        DailyCounter_Alert = DailyCounter_Alert + int(line.split("--")[1])
+                        DailyCounter_Event = DailyCounter_Event + int(line.split("--")[2])
+                        DailyCounter_Syscheck = DailyCounter_Syscheck + int(
+                            line.split("--")[3]
+                        )
+                        DailyCounter_Firewall = DailyCounter_Firewall + int(
+                            line.split("--")[4]
+                        )
+                        if DoDbg(F) is True:
+                            istk = inspect.stack()
+                            DebugMode("Daily counter loaded", istk,DailyCounter_Alert,DailyCounter_Event,DailyCounter_Syscheck)
+
+                    elif "-0-" in line:
+                        LevelZero.append(line)
+                        LevelZero_Counter = LevelZero_Counter + int(line.split("-")[3])
+                        if line.split("-")[1] in LevelZero_Id:
+                            LevelZero_Id[line.split("-")[1]] = int(
+                                LevelZero_Id.get(line.split("-")[1])
+                            ) + int(line.split("-")[3])
+                        else:
+                            LevelZero_Id[line.split("-")[1]] = line.split("-")[3]
+
+                        if DoDbg(F) is True:
+                            istk = inspect.stack()
+                            DebugMode("LevelZero counter loaded", istk,LevelZero_Counter,LevelZero_Id)
+
+
+                    elif int(line.split("-")[2]) > MaxLvlAlert:
+                        MaxLvlAlert = int(line.split("-")[2])
+                        if DoDbg(F) is True:
+                            istk = inspect.stack()
+                            DebugMode("LevelZero counter loaded", istk,MaxLvlAlert)
+
+                    if not "--" in line and not "-0-" in line:
+                        if line.split("-")[1] in RuleId_Counter:
+                            RuleId_Counter[line.split("-")[1]] = int(
+                                RuleId_Counter.get(line.split("-")[1])
+                            ) + int(line.split("-")[3])
+                        else:
+                            RuleId_Counter[line.split("-")[1]] = line.split("-")[3]
+
+                        if line.split("-")[1] in RuleId_Lvl:
+                            pass
+                        else:
+                            RuleId_Lvl[line.split("-")[1]] = line.split("-")[2]
+                        if DoDbg(F) is True:
+                            istk = inspect.stack()
+                            DebugMode("Ruleid counter loaded", istk,RuleId_Counter,RuleId_Lvl)
+
+    if os.path.exists(Yesterday_lastfile):
+        with open(Yesterday_lastfile) as f:
+            for line in f:
+                line = line.strip()
+
+                if (
+                    len(line) > 0
+                    and not "Hour totals" in line
+                    and not "Total events" in line
+                ):
+
+                    if "--" in line:
+                        pass
+                    elif "-0-" in line:
+                        Yesterday_LevelZero.append(line)
+                        Yesterday_LevelZero_Counter = Yesterday_LevelZero_Counter + int(
+                            line.split("-")[3]
+                        )
+
+                        if line.split("-")[1] in Yesterday_LevelZero_Id:
+                            Yesterday_LevelZero_Id[line.split("-")[1]] = int(
+                                Yesterday_LevelZero_Id.get(line.split("-")[1])
+                            ) + int(line.split("-")[3])
+                        else:
+                            Yesterday_LevelZero_Id[line.split("-")[1]] = line.split("-")[3]
+                        if DoDbg(F) is True:
+                            istk = inspect.stack()
+                            DebugMode("Yesterday counter loaded", istk,Yesterday_LevelZero_Counter,Yesterday_LevelZero_Id)
+
+                    elif int(line.split("-")[2]) > Yesterday_MaxLvlAlert:
+                        Yesterday_MaxLvlAlert = int(line.split("-")[2])
+                        if DoDbg(F) is True:
+                            istk = inspect.stack()
+                            DebugMode("Yesterday maxalert loaded", istk,Yesterday_MaxLvlAlert)
+                    if not "--" in line and not "-0-" in line:
+
+                        if line.split("-")[1] in Yesterday_RuleId_Counter:
+                            Yesterday_RuleId_Counter[line.split("-")[1]] = int(
+                                Yesterday_RuleId_Counter.get(line.split("-")[1])
+                            ) + int(line.split("-")[3])
+                        else:
+                            Yesterday_RuleId_Counter[line.split("-")[1]] = line.split("-")[3]
+
+                        if line.split("-")[1] in Yesterday_RuleId_Lvl:
+                            pass
+                        else:
+                            Yesterday_RuleId_Lvl[line.split("-")[1]] = line.split("-")[2]
+                        if DoDbg(F) is True:
+                            istk = inspect.stack()
+                            DebugMode("Yesterday maxalert loaded", istk,Yesterday_RuleId_Counter,Yesterday_RuleId_Lvl)
+
+
+    Save_DataBase("LevelZeroCounter",Daily_Timestamp,LevelZero_Id,LevelZero_Counter)
+    Save_DataBase("YesterdayLevelZeroCounter",Yesterday_Timestamp,Yesterday_LevelZero_Id,Yesterday_LevelZero_Counter)
+    Save_DataBase("DailyCounter",Daily_Timestamp,DailyCounter_Alert,DailyCounter_Event,DailyCounter_Syscheck,DailyCounter_Firewall,MaxLvlAlert)
+
+    for rule, cnt in RuleId_Counter.items():
+        if not rule in Global_Rule_List:
+            Global_Rule_List.append(rule)
+            
+        if not RuleId_Lvl.get(rule) in Global_Lvl_List:
+            Global_Lvl_List.append(RuleId_Lvl.get(rule))
+    for rule, cnt in Yesterday_RuleId_Counter.items():
+        if not rule in Global_Rule_List:
+            Global_Rule_List.append(rule)
+        if not Yesterday_RuleId_Lvl.get(rule) in Global_Lvl_List:
+            Global_Lvl_List.append(Yesterday_RuleId_Lvl.get(rule))
+
+    try:
+       Last_Stat = Hourstat[-1]
+       Last_Stat_Hour = Last_Stat.split("--")[0]
+       Last_Stat_Alert = Last_Stat.split("--")[1]
+       Last_Stat_Event = Last_Stat.split("--")[2]
+       Last_Stat_Syscheck = Last_Stat.split("--")[3]
+       Last_Stat_Firewall = Last_Stat.split("--")[4]
+       if DoDbg(F) is True:
+               istk = inspect.stack()
+               DebugMode("Last_stat loaded", istk,Last_Stat,Last_Stat_Hour,Last_Stat_Alert,Last_Stat_Event,Last_Stat_Syscheck,Last_Stat_Firewall,lastfile)
+    except Exception as e:
+       if DoDbg(F) is True:
+               istk = inspect.stack()
+               DebugMode("Using dummy stats", istk)
+       Last_Stat_Hour = "0"
+       Last_Stat_Alert = "0"
+       Last_Stat_Event = "0"
+       Last_Stat_Syscheck = "0"
+       Last_Stat_Firewall = "0"
+
+
+    Save_DataBase("LastStats",Stats_Timestamp,Last_Stat_Hour,Last_Stat_Alert,Last_Stat_Event,Last_Stat_Syscheck,Last_Stat_Firewall,lastfile)
+
+
+
+    for hst in HOSTS_NAMES:
+        if hst in Host_Alerts:
+            HOST_DICT[hst + "_Alert"] = Host_Alerts.get(hst)
+            Save_DataBase("HostStats",Stats_Timestamp,hst,Host_Alerts.get(hst))
+            if DoDbg(F) is True:
+               istk = inspect.stack()
+               DebugMode("Host alert loaded", istk,hst,HOST_DICT[hst + "_Alert"])
+        else:
+            HOST_DICT[hst + "_Alert"] = "???"
+            Save_DataBase("HostStats",Stats_Timestamp,hst,"???")
+            if DoDbg(F) is True:
+               istk = inspect.stack()
+               DebugMode("Host alert loaded", istk,"???",hst,HOST_DICT[hst + "_Alert"])
+
+
+
+
+def Gen_Rnd_Hash(*datash):
+      F = "Gen_Rnd_Hash"
+      try:
+         hash= hashlib.sha224(str(datash).encode()).hexdigest()
+         if DoDbg(F) is True:
+               istk = inspect.stack()
+               DebugMode(
+                  "Normal",
+                  istk,
+                  datash,
+                  hash,
+                )
+
+      except Exception as e:
+         hash = hashlib.md5(os.urandom(56)).hexdigest()
+         if DoDbg(F) is True:
+            istk = inspect.stack()
+            DebugMode(
+               "Using random hash because of :"+str(e),
+               istk,
+               datash,
+               hash,
+            )
+
+      return(hash)
+
+def Save_DataBase(datatype,*datas):
+
+
+    if USE_TINY_DB is False:
+        return()
+
+    F = "Save_DataBase"
+
+    DB = TinyDB(TINY_DB_FILE)
+    Ask= Query()
+    Hashid = Gen_Rnd_Hash(datas)
+    Duplicate = DB.search(Ask.hashdb.matches(Hashid))
+    if datatype == "LastStats":
+       if len(Duplicate) == 0:
+           try:
+              DB.insert({"hashdb": Hashid, "datatypedb": datatype,"timestampdb":str(datas[0]),"StatHour":datas[1],"StatAlert":datas[2],"StatEvent":datas[3],"StatSyscheck":datas[4],"StatFirewall":datas[5],"StatPath":datas[6]})
+           except Exception as e:
+               if DoDbg(F) is True:
+                   istk = inspect.stack()
+                   DebugMode(
+                     "TinyDb Error :"+str(e),
+                     istk,
+                     datatype,
+                     Hashid,
+                     datas,
+                     )
+       else:
+           if DoDbg(F) is True:
+              istk = inspect.stack()
+              DebugMode(
+               "Entry Already inside database",
+               istk,
+               datatype,
+               Hashid,
+               Duplicate,
+            )
+
+    if datatype == "HostStats":
+       if len(Duplicate) == 0:
+         try:
+            DB.insert({"hashdb": Hashid, "datatypedb": datatype,"timestampdb":str(datas[0]),"HostName":datas[1],"AlertsNbr":datas[2]})
+         except Exception as e:
+               if DoDbg(F) is True:
+                   istk = inspect.stack()
+                   DebugMode(
+                     "TinyDb Error :"+str(e),
+                     istk,
+                     datatype,
+                     Hashid,
+                     datas,
+                     )
+       else:
+           if DoDbg(F) is True:
+              istk = inspect.stack()
+              DebugMode(
+               "Entry Already inside database",
+               istk,
+               datatype,
+               Hashid,
+               Duplicate,
+            )
+
+
+    if datatype == "DailyCounter":
+       if len(Duplicate) == 0:
+         try:
+            DB.insert({"hashdb": Hashid, "datatypedb": datatype,"timestampdb":str(datas[0]),"DailyAlert":datas[1],"DailyEvent":datas[2],"DailySyscheck":datas[3],"DailyFirewall":datas[4]})
+         except Exception as e:
+               if DoDbg(F) is True:
+                   istk = inspect.stack()
+                   DebugMode(
+                     "TinyDb Error :"+str(e),
+                     istk,
+                     datatype,
+                     Hashid,
+                     datas,
+                     )
+       else:
+           if DoDbg(F) is True:
+              istk = inspect.stack()
+              DebugMode(
+               "Entry Already inside database",
+               istk,
+               datatype,
+               Hashid,
+               Duplicate,
+               datas,
+            )
+
+    if datatype == "LevelZeroCounter":
+       if len(Duplicate) == 0:
+         try:
+            DB.insert({"hashdb": Hashid, "datatypedb": datatype,"timestampdb":str(datas[0]),"LevelZeroId":datas[1],"LevelZeroCounter":datas[2]})
+         except Exception as e:
+               if DoDbg(F) is True:
+                   istk = inspect.stack()
+                   DebugMode(
+                     "TinyDb Error :"+str(e),
+                     istk,
+                     datatype,
+                     Hashid,
+                     datas,
+                     )
+       else:
+           if DoDbg(F) is True:
+              istk = inspect.stack()
+              DebugMode(
+               "Entry Already inside database",
+               istk,
+               datatype,
+               Hashid,
+               Duplicate,
+               datas,
+            )
+
+
+    if datatype == "YesterdayLevelZeroCounter":
+       if len(Duplicate) == 0:
+         try:
+            DB.insert({"hashdb": Hashid, "datatypedb": datatype,"timestampdb":str(datas[0]),"YesterdayLevelZeroId":datas[1],"YesterdayLevelZeroCounter":datas[2]})
+         except Exception as e:
+               if DoDbg(F) is True:
+                   istk = inspect.stack()
+                   DebugMode(
+                     "TinyDb Error :"+str(e),
+                     istk,
+                     datatype,
+                     Hashid,
+                     datas,
+                     )
+       else:
+           if DoDbg(F) is True:
+              istk = inspect.stack()
+              DebugMode(
+               "Entry Already inside database",
+               istk,
+               datatype,
+               Hashid,
+               Duplicate,
+               datas,
+            )
+
+
+    if datatype == "Stockvars":
+       if len(Duplicate) == 0:
+         try:
+            DB.insert({"hashdb": Hashid, "datatypedb": datatype,"timestampdb":str(datas[0]),"Hostname":datas[1],"Lvl":datas[2],"Sub":datas[3],"Body":datas[4]})
+         except Exception as e:
+               if DoDbg(F) is True:
+                   istk = inspect.stack()
+                   DebugMode(
+                     "TinyDb Error :"+str(e),
+                     istk,
+                     datatype,
+                     Hashid,
+                     datas,
+                     )
+       else:
+           if DoDbg(F) is True:
+              istk = inspect.stack()
+              DebugMode(
+               "Entry Already inside database",
+               istk,
+               datatype,
+               Hashid,
+               Duplicate,
+               datas,
+            )
+
+
 def Get_Mails(file):
     global Mails_Archive
     F = "Get_Mails"
@@ -158,12 +644,13 @@ def Get_Mails(file):
         with open(file, "r") as m:
             mailbox = m.readlines()
     except Exception as e:
-        istk = inspect.stack()
-        DebugMode(
-            str(e),
-            istk,
-            file,
-        )
+        if DoDbg(F) is True:
+            istk = inspect.stack()
+            DebugMode(
+               str(e),
+               istk,
+              file,
+            )
         mailbox = []
 
     for line in mailbox:
@@ -383,7 +870,7 @@ def CheckLvl(Sender, Dest, Sub, Mess):
                             "Checkservice.py lvl error:%s" % e,
                             istk,
                         )
-                    lvl = "??"
+                    lvl = "???"
                     return lvl
 
     lvl = ""
@@ -395,7 +882,7 @@ def CheckLvl(Sender, Dest, Sub, Mess):
                 lvl = line.split("[")[1].split("]")[0]
                 return lvl
     except Exception as e:
-        lvl = "??"
+        lvl = "???"
         if DoDbg(F) is True:
             istk = inspect.stack()
             DebugMode(str(e), istk, "Error:%s" % e, Sub, Sender, Dest, lvl, Mess)
@@ -424,10 +911,10 @@ def CheckLvl(Sender, Dest, Sub, Mess):
         lvl = 10
 
     else:
-        lvl = "??"
+        lvl = "???"
         if DoDbg(F) is True:
             istk = inspect.stack()
-            DebugMode("Error: lvl is ??", istk, Sub, Sender, Dest, lvl, Mess)
+            DebugMode("Error: lvl is ???", istk, Sub, Sender, Dest, lvl, Mess)
     return lvl
 
 
@@ -596,6 +1083,7 @@ def Stockvars(Parsed):
                     Mess,
                     hostname,
                 )
+            body = "Osserver Error:Message Content is missing."
             Messages.append("Osserver Error:Message Content is missing.")
 
         if len(str(Sub)) > 0:
@@ -604,9 +1092,10 @@ def Stockvars(Parsed):
             if DoDbg(F) is True:
                 istk = inspect.stack()
                 DebugMode("Len Subj <= 0", istk, Sub)
+            Sub = "Osserver Error:Subject Content is missing."
             Subjects.append("Osserver Error:Subject Content is missing.")
 
-
+        Save_DataBase("Stockvars",dat,hostname,lvl,Sub,str(body))
 
 def Ssh(usr, host, cmd):
     F = "Ssh"
@@ -614,6 +1103,9 @@ def Ssh(usr, host, cmd):
         out = subprocess.check_output(
             ["ssh", "-i", SSH_KEY, "{}@{}".format(usr, host), cmd]
         )
+        if DoDbg(F) is True:
+            istk = inspect.stack()
+            DebugMode("Debug Ssh:", istk, usr, host, cmd,out.decode("utf8"))
         return out.decode("utf8")
     except Exception as e:
         if DoDbg(F) is True:
@@ -644,7 +1136,7 @@ def Avatar(hname):
                 + name
                 + '" style="width: 14px; height: 14px;">'
             )
-    return "??"
+    return "???"
 
 
 def Acc_End(Current_Item, Total_Items, Current_Page, Page_Name):
@@ -810,7 +1302,7 @@ def Accordeon(sort=None, arg=None):
             Hosts_Sort, Levels_Sort, Dates_Sort, Messages_Sort, Subjects_Sort = Sorting(
                 sort, arg
             )
-            info = "Back to Buildhtml()"
+            info = "Back to BuildHtml()"
             lnhostsort = len(Hosts_Sort)
             lnlvlsort = len(Levels_Sort)
             lndatsort = len(Dates_Sort)
@@ -836,7 +1328,7 @@ def Accordeon(sort=None, arg=None):
         Dates_Sort = Last_Dates_Sort
         Messages_Sort = Last_Messages_Sort
         Subjects_Sort = Last_Subjects_Sort
-        info = "Buildhtml()"
+        info = "BuildHtml()"
         lnhostsort = len(Hosts_Sort)
         lnlvlsort = len(Levels_Sort)
         lndatsort = len(Dates_Sort)
@@ -980,12 +1472,17 @@ def Accordeon(sort=None, arg=None):
     return Accordeon_Html
 
 
+
+
 def BuildHtml(sort=None, arg=None):
     global Global_Lvl_List
     global Global_Rule_List
 
+    Global_Lvl_List = []
+    Global_Rule_List = []
+
+
     F = "BuildHtml"
-    statpath = OSSEC_STATS_PATH
 
     Data_to_html = ""
 
@@ -1015,7 +1512,7 @@ def BuildHtml(sort=None, arg=None):
     yesterday = day - timedelta(days=1)
 
     lastfile = (
-        str(statpath)
+        str(OSSEC_STATS_PATH)
         + str(day.year)
         + "/"
         + str(day.strftime("%b"))
@@ -1024,7 +1521,7 @@ def BuildHtml(sort=None, arg=None):
         + ".log"
     )
     Yesterday_lastfile = (
-        str(statpath)
+        str(OSSEC_STATS_PATH)
         + str(yesterday.year)
         + "/"
         + str(yesterday.strftime("%b"))
@@ -1035,10 +1532,10 @@ def BuildHtml(sort=None, arg=None):
 
     while os.path.exists(lastfile) is False:
         failcnt += 1
-        day = day - timedelta(days=1)
+        day = day - timedelta(days=failcnt)
         copylastfile = lastfile
         lastfile = (
-            str(statpath)
+            str(OSSEC_STATS_PATH)
             + str(day.year)
             + "/"
             + str(day.strftime("%b"))
@@ -1049,7 +1546,6 @@ def BuildHtml(sort=None, arg=None):
         if os.path.exists(lastfile):
             break
         if failcnt > 31:
-            print("Can't find any stats for this month(lastfile)")
             if DoDbg(F) is True:
                         istk = inspect.stack()
                         DebugMode("Can't find any stats for this month(lastfile)", istk,failcnt,lastfile,Yesterday_lastfile)
@@ -1057,10 +1553,10 @@ def BuildHtml(sort=None, arg=None):
     failcnt = 0
     while os.path.exists(Yesterday_lastfile):
         failcnt += 1
-        yesterday = yesterday - timedelta(days=1)
+        yesterday = yesterday - timedelta(days=failcnt)
         copyYesterday_lastfile=Yesterday_lastfile
         Yesterday_lastfile = (
-            str(statpath)
+            str(OSSEC_STATS_PATH)
             + str(yesterday.year)
             + "/"
             + str(yesterday.strftime("%b"))
@@ -1071,10 +1567,10 @@ def BuildHtml(sort=None, arg=None):
         if os.path.exists(Yesterday_lastfile):
             break
         if failcnt > 31:
-            print("Can't find any stats for this month(Yesterday_lastfile)", Yesterday_lastfile)
             if DoDbg(F) is True:
                         istk = inspect.stack()
                         DebugMode("Can't find any stats for this month(Yesterday_lastfile)", istk,Yesterday_lastfile, lastfile,Yesterday_lastfile)
+            break
     if os.path.exists(lastfile):
 
         with open(lastfile) as f:
@@ -1097,11 +1593,13 @@ def BuildHtml(sort=None, arg=None):
                         DailyCounter_Firewall = DailyCounter_Firewall + int(
                             line.split("--")[4]
                         )
+                        if DoDbg(F) is True:
+                            istk = inspect.stack()
+                            DebugMode("Daily counter loaded", istk,DailyCounter_Alert,DailyCounter_Event,DailyCounter_Syscheck)
 
                     elif "-0-" in line:
                         LevelZero.append(line)
                         LevelZero_Counter = LevelZero_Counter + int(line.split("-")[3])
-
                         if line.split("-")[1] in LevelZero_Id:
                             LevelZero_Id[line.split("-")[1]] = int(
                                 LevelZero_Id.get(line.split("-")[1])
@@ -1109,8 +1607,16 @@ def BuildHtml(sort=None, arg=None):
                         else:
                             LevelZero_Id[line.split("-")[1]] = line.split("-")[3]
 
+                        if DoDbg(F) is True:
+                            istk = inspect.stack()
+                            DebugMode("LevelZero counter loaded", istk,LevelZero_Counter,LevelZero_Id)
+
+
                     elif int(line.split("-")[2]) > MaxLvlAlert:
                         MaxLvlAlert = int(line.split("-")[2])
+                        if DoDbg(F) is True:
+                            istk = inspect.stack()
+                            DebugMode("LevelZero counter loaded", istk,MaxLvlAlert)
 
                     if not "--" in line and not "-0-" in line:
                         if line.split("-")[1] in RuleId_Counter:
@@ -1124,6 +1630,9 @@ def BuildHtml(sort=None, arg=None):
                             pass
                         else:
                             RuleId_Lvl[line.split("-")[1]] = line.split("-")[2]
+                        if DoDbg(F) is True:
+                            istk = inspect.stack()
+                            DebugMode("Ruleid counter loaded", istk,RuleId_Counter,RuleId_Lvl)
 
     if os.path.exists(Yesterday_lastfile):
         with open(Yesterday_lastfile) as f:
@@ -1150,9 +1659,15 @@ def BuildHtml(sort=None, arg=None):
                             ) + int(line.split("-")[3])
                         else:
                             Yesterday_LevelZero_Id[line.split("-")[1]] = line.split("-")[3]
+                        if DoDbg(F) is True:
+                            istk = inspect.stack()
+                            DebugMode("Yesterday counter loaded", istk,Yesterday_LevelZero_Counter,Yesterday_LevelZero_Id)
 
                     elif int(line.split("-")[2]) > Yesterday_MaxLvlAlert:
                         Yesterday_MaxLvlAlert = int(line.split("-")[2])
+                        if DoDbg(F) is True:
+                            istk = inspect.stack()
+                            DebugMode("Yesterday maxalert loaded", istk,Yesterday_MaxLvlAlert)
                     if not "--" in line and not "-0-" in line:
 
                         if line.split("-")[1] in Yesterday_RuleId_Counter:
@@ -1166,6 +1681,9 @@ def BuildHtml(sort=None, arg=None):
                             pass
                         else:
                             Yesterday_RuleId_Lvl[line.split("-")[1]] = line.split("-")[2]
+                        if DoDbg(F) is True:
+                            istk = inspect.stack()
+                            DebugMode("Yesterday maxalert loaded", istk,Yesterday_RuleId_Counter,Yesterday_RuleId_Lvl)
 
     for rule, cnt in RuleId_Counter.items():
         if not rule in Global_Rule_List:
@@ -1178,20 +1696,41 @@ def BuildHtml(sort=None, arg=None):
         if not Yesterday_RuleId_Lvl.get(rule) in Global_Lvl_List:
             Global_Lvl_List.append(Yesterday_RuleId_Lvl.get(rule))
 
-    Last_Stat = Hourstat[-1]
-    Last_Stat_Hour = Last_Stat.split("--")[0]
-    Last_Stat_Alert = Last_Stat.split("--")[1]
-    Last_Stat_Event = Last_Stat.split("--")[2]
-    Last_Stat_Syscheck = Last_Stat.split("--")[3]
-    Last_Stat_Firewall = Last_Stat.split("--")[4]
+    try:
+       Last_Stat = Hourstat[-1]
+       Last_Stat_Hour = Last_Stat.split("--")[0]
+       Last_Stat_Alert = Last_Stat.split("--")[1]
+       Last_Stat_Event = Last_Stat.split("--")[2]
+       Last_Stat_Syscheck = Last_Stat.split("--")[3]
+       Last_Stat_Firewall = Last_Stat.split("--")[4]
+       if DoDbg(F) is True:
+               istk = inspect.stack()
+               DebugMode("Last_stat loaded", istk,Last_Stat,Last_Stat_Hour,Last_Stat_Alert,Last_Stat_Event,Last_Stat_Syscheck,Last_Stat_Firewall)
+    except Exception as e:
+       if DoDbg(F) is True:
+               istk = inspect.stack()
+               DebugMode("Using dummy stats", istk)
+       Last_Stat_Hour = "0"
+       Last_Stat_Alert = "0"
+       Last_Stat_Event = "0"
+       Last_Stat_Syscheck = "0"
+       Last_Stat_Firewall = "0"
+
 
     for hst in HOSTS_NAMES:
         if hst in Host_Alerts:
             HOST_DICT[hst + "_Alert"] = Host_Alerts.get(hst)
+            if DoDbg(F) is True:
+               istk = inspect.stack()
+               DebugMode("Host alert loaded", istk,hst,HOST_DICT[hst + "_Alert"])
         else:
-            HOST_DICT[hst + "_Alert"] = "??"
+            HOST_DICT[hst + "_Alert"] = "???"
+            if DoDbg(F) is True:
+               istk = inspect.stack()
+               DebugMode("Host alert loaded", istk,"???",hst,HOST_DICT[hst + "_Alert"])
 
-    ##
+
+
 
     Data_to_html += Template_Head
 
@@ -1217,6 +1756,10 @@ def BuildHtml(sort=None, arg=None):
         + "</p>"
     )
 
+    if DoDbg(F) is True:
+       istk = inspect.stack()
+       DebugMode("Dailycounter loaded html", istk,DailyCounter_Alert,DailyCounter_Event,DailyCounter_Syscheck,DailyCounter_Firewall)
+
     Data_to_html += Template_DailyBlockEND
 
     Data_to_html += Template_HourBlock
@@ -1234,11 +1777,14 @@ def BuildHtml(sort=None, arg=None):
         + str(Last_Stat_Firewall)
         + "</p>"
     )
+    if DoDbg(F) is True:
+       istk = inspect.stack()
+       DebugMode("Last_stat loaded html", istk,Last_Stat_Alert,Last_Stat_Event,Last_Stat_Syscheck,Last_Stat_Firewall)
+
 
     Data_to_html += Template_HourBlockEND
 
     Data_to_html += Template_Chart
-
     ##################################################### #Data_to_html += Template_ChartEND
 
     Data_to_html += Template_ChartJs
@@ -1248,13 +1794,25 @@ def BuildHtml(sort=None, arg=None):
     Data_to_html += Template_Health
 
     for hst, img in zip(HOSTS_NAMES, HOSTS_IMGS):
+        State = "normal"
+        Flag_Score = str(HOST_DICT.get(hst + "_Temp"))+str(HOST_DICT.get(hst + "_Space"))+str(HOST_DICT.get(hst + "_Alert"))
+        Data_to_html += """
+                  """
+        if Flag_Score.count("?") in range(1,7):
+              Data_to_html += """<li id ="warning"> """
+              State = "warning"
+        elif Flag_Score.count("?") > 6:
+              Data_to_html += """<li id ="offline"> """
+              State = "offline"
+        else:
+              Data_to_html += """<li id ="normal">>"""
+              State = "normal"
 
-        Data_to_html += """                  <li> <i class="read" style="background-color: #cc33cc;"></i>
+        Data_to_html += """<i class="read" style="background-color: #cc33cc;"></i>
                     <img class="avatar" src="images/%s" alt="avatar" style="background-color: #ffccff;">
-                    <p class="sender" style="top: -3px !important;">Temp:%s</p>
+                    <p class="sender">Temp:%s</p>
                     <p class="disk">Disk:%s</p>
-                    <p class="alerts" style="margin-bottom: 10px !important; padding: 5px !important; margin-top: -7px !import
-ant;">Alerts
+                    <p class="alerts">Alerts
                       %s</p>
                     <br>
                   </li>""" % (
@@ -1263,6 +1821,9 @@ ant;">Alerts
             HOST_DICT.get(hst + "_Space"),
             HOST_DICT.get(hst + "_Alert"),
         )
+        if DoDbg(F) is True:
+           istk = inspect.stack()
+           DebugMode("Health loaded", istk,hst,img,Flag_Score,State,HOST_DICT.get(hst + "_Temp"),HOST_DICT.get(hst + "_Space"),HOST_DICT.get(hst + "_Alert"))
 
     Data_to_html += Template_HealthEND
 
@@ -1287,6 +1848,9 @@ ant;">Alerts
     Data_to_html += (
         """<p><bold style="font-size: 15px;">LivingCam :</bold> %s</p>""" % (LivingCam)
     )
+    if DoDbg(F) is True:
+           istk = inspect.stack()
+           DebugMode("Template_Cam loaded", istk,GarageCam,GardenCam,LivingCam)
 
     Data_to_html += Template_CamEND
 
@@ -1295,6 +1859,9 @@ ant;">Alerts
     Data_to_html += Template_AlertBlock1
 
     Data_to_html += str(MaxLvlAlert) + "</p>\n"
+    if DoDbg(F) is True:
+           istk = inspect.stack()
+           DebugMode("MaxLvlAlert loaded html", istk,MaxLvlAlert)
 
     for rule, cnt in RuleId_Counter.items():
         Data_to_html += (
@@ -1307,6 +1874,9 @@ ant;">Alerts
         + str(LevelZero_Counter)
         + "</p>"
     )
+    if DoDbg(F) is True:
+           istk = inspect.stack()
+           DebugMode("Lvl zero cnter loaded html", istk,LevelZero_Counter)
 
     for rule, cnt in LevelZero_Id.items():
         Data_to_html += (
@@ -1321,8 +1891,12 @@ ant;">Alerts
     Data_to_html += Template_AlertBlock2
 
     Data_to_html += str(Yesterday_MaxLvlAlert) + "</p>\n"
+    if DoDbg(F) is True:
+           istk = inspect.stack()
+           DebugMode("Yesterday_MaxLvlAlert loaded html", istk,Yesterday_MaxLvlAlert)
 
     for rule, cnt in Yesterday_RuleId_Counter.items():
+        
         Data_to_html += (
             """            <p style="text-align: center;"><a href="lvl%s.html">LvL %s</a> <a href="rule%s.html">Rule[%s]</a>: %s</p>\n"""
             % (
@@ -1339,6 +1913,9 @@ ant;">Alerts
         + str(Yesterday_LevelZero_Counter)
         + "</p>"
     )
+    if DoDbg(F) is True:
+           istk = inspect.stack()
+           DebugMode("Yesterday_LevelZero_Counter loaded html", istk,Yesterday_LevelZero_Counter)
 
     for rule, cnt in Yesterday_LevelZero_Id.items():
         Data_to_html += (
@@ -1347,8 +1924,6 @@ ant;">Alerts
         )
 
     Data_to_html += Template_AlertBlock2END
-
-    Data_to_html += Template_Row4
 
     Data_to_html += Template_Tail
 
@@ -1660,6 +2235,7 @@ def Spliter(sort, arg):
             istk = inspect.stack()
             DebugMode("in Spliter", istk, Page_Number, To_Split, sort, arg)
 
+
         Page_To_Save = BuildHtml(sort, arg)
 
         if To_Split is True:
@@ -1765,16 +2341,19 @@ def Update():
                 else:
                     HOST_DICT[hst + "_Temp"] = (
                         str(subprocess.check_output(["sensors"]).decode("utf8"))
-                        .split("temp1:        +")[1]
+                        .split("Temp:   +")[1]
                         .split("°C")[0]
                         .split(".")[0]
                         + "°C"
                     )
+                if DoDbg(F) is True:
+                    istk = inspect.stack()
+                    DebugMode("normal sensors ", istk,hst,usr,HOST_DICT[hst + "_Temp"])
 
             except Exception as e:
                 if DoDbg(F) is True:
                     istk = inspect.stack()
-                    DebugMode(str(e), istk, "temp")
+                    DebugMode("error temp "+str(e), istk,hst,usr,USER)
                 HOST_DICT[hst + "_Temp"] = "???"
 
             try:
@@ -1789,10 +2368,13 @@ def Update():
                         ).split("%")[1][-3:]
                         + "%"
                     )
+                if DoDbg(F) is True:
+                    istk = inspect.stack()
+                    DebugMode("normal df", istk,hst,usr,HOST_DICT[hst + "_Space"])
             except Exception as e:
                 if DoDbg(F) is True:
                     istk = inspect.stack()
-                    DebugMode(str(e), istk, "df")
+                    DebugMode("error DF  "+str(e), istk,hst,usr,USER)
                 HOST_DICT[hst + "_Space"] = "???"
 
     if Timer("Cam", 3600) is True:
@@ -1842,26 +2424,25 @@ def Update():
 
 
 def Osserver():
-    global ServerReady
+#    global ServerReady
+     pass
+#    F = "Osserver"
+#    try:
 
-    F = "Osserver"
-    try:
-
-        @cherrypy.expose
-        def reload():
-            ServerReady = False
-            Loading()
-            Launcher()
-            while True:
-                time.sleep(1)
-                if ServerReady is True:
-                   break
-            raise cherrypy.HTTPRedirect("index.html")
-
-    except Exception as e:
-        if DoDbg(F) is True:
-            istk = inspect.stack()
-            DebugMode(str(e), istk)
+#        @cherrypy.expose
+#        def reload():
+#            ServerReady = False
+#            Loading()
+#            Launcher()
+#            while True:
+#                time.sleep(1)
+#                if ServerReady is True:
+#                   break
+#            raise cherrypy.HTTPRedirect("index.html")
+#    except Exception as e:
+#        if DoDbg(F) is True:
+#            istk = inspect.stack()
+#            DebugMode(str(e), istk)
 
 
 def Timer(mode, limit):
@@ -1965,10 +2546,12 @@ def Parse_Mail(Mails):
 def Launcher():
     global ServerReady
 
-    Mails_Lst = Get_Mails(MAIL_PATH)
-    Parsed_Lst = Parse_Mail(Mails_Lst)
-    Stockvars(Parsed_Lst)
-    Update()
+    if GET_OSSEC_DATA_FROM == "mail":
+        Mails_Lst = Get_Mails(MAIL_PATH)
+        Parsed_Lst = Parse_Mail(Mails_Lst)
+        Stockvars(Parsed_Lst)
+        Find_Ossec_Stats()
+        Update()
 
     ServerReady = True
 
